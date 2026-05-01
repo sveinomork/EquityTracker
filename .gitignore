@@ -1,0 +1,45 @@
+# OS / Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Databases
+*.db
+*.sqlite3
+
+# Build / dist
+dist/
+build/
+*.egg-info/
+
+# Node (future frontend)
+node_modules/
+frontend/dist/
+frontend/.next/
+frontend/.vite/
+
+# Backend local artifacts
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.mypy_cache/
+backend/rentefond.db
