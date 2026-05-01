@@ -1,7 +1,7 @@
 [project]
-name = "fundtracker-backend"
+name = "equitytracker-backend"
 version = "0.1.0"
-description = "Portfolio tracking API for leveraged fixed income funds"
+description = "EquityTracker portfolio backend for leveraged fixed income funds"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

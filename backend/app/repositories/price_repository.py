@@ -31,12 +31,24 @@ class PriceRepository:
             self.session.refresh(item)
         return stored
 
-    def list_for_fund(self, fund_id: uuid.UUID) -> list[DailyFundPrice]:
-        statement = (
-            select(DailyFundPrice)
-            .where(DailyFundPrice.fund_id == fund_id)
-            .order_by(DailyFundPrice.date.asc())
-        )
+    def list_for_fund(
+        self,
+        fund_id: uuid.UUID,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        limit: int | None = None,
+    ) -> list[DailyFundPrice]:
+        statement = select(DailyFundPrice).where(DailyFundPrice.fund_id == fund_id)
+
+        if from_date is not None:
+            statement = statement.where(DailyFundPrice.date >= from_date)
+        if to_date is not None:
+            statement = statement.where(DailyFundPrice.date <= to_date)
+
+        statement = statement.order_by(DailyFundPrice.date.asc())
+        if limit is not None:
+            statement = statement.limit(limit)
+
         return list(self.session.scalars(statement))
 
     def latest_on_or_before(self, fund_id: uuid.UUID, value_date: date) -> DailyFundPrice | None:
@@ -47,3 +59,19 @@ class PriceRepository:
             .limit(1)
         )
         return self.session.scalar(statement)
+
+    def latest_on_or_before_with_max_staleness(
+        self,
+        fund_id: uuid.UUID,
+        value_date: date,
+        max_staleness_days: int,
+    ) -> DailyFundPrice | None:
+        latest = self.latest_on_or_before(fund_id, value_date)
+        if latest is None:
+            return None
+
+        staleness = (value_date - latest.date).days
+        if staleness > max_staleness_days:
+            return None
+
+        return latest

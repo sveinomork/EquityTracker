@@ -28,6 +28,7 @@ from app.services.interest_service import InterestService
 DECIMAL_ZERO = Decimal("0")
 DECIMAL_100 = Decimal("100")
 WINDOWS = ((14, "d14_pct"), (30, "d30_pct"), (90, "d90_pct"), (180, "d180_pct"), (365, "y1_pct"))
+MAX_PRICE_STALENESS_DAYS = 7
 
 
 @dataclass(slots=True)
@@ -134,7 +135,9 @@ class PortfolioAnalyticsService:
                 annual_current=current_annual_cost,
             ),
             performance_windows=self._build_performance_windows(
-                fund_id, effective_date, latest_price_value
+                fund_id,
+                effective_date,
+                transactions,
             ),
         )
 
@@ -308,21 +311,64 @@ class PortfolioAnalyticsService:
         self,
         fund_id: uuid.UUID,
         as_of_date: date,
-        latest_price_value: Decimal,
+        transactions: list[Transaction],
     ) -> PerformanceWindows:
         values: dict[str, Decimal | None] = {}
+        latest_price = self.price_repository.latest_on_or_before_with_max_staleness(
+            fund_id,
+            as_of_date,
+            MAX_PRICE_STALENESS_DAYS,
+        )
+        if latest_price is None:
+            for _, field_name in WINDOWS:
+                values[field_name] = None
+            return PerformanceWindows(**values)
+
+        latest_price_value = Decimal(latest_price.price)
         for days, field_name in WINDOWS:
             reference_date = as_of_date - timedelta(days=days)
-            reference_price = self.price_repository.latest_on_or_before(fund_id, reference_date)
-            reference_value = (
-                Decimal(reference_price.price) if reference_price is not None else DECIMAL_ZERO
+            reference_price = self.price_repository.latest_on_or_before_with_max_staleness(
+                fund_id,
+                reference_date,
+                MAX_PRICE_STALENESS_DAYS,
             )
-            values[field_name] = (
-                self._safe_percentage(
-                    latest_price_value - reference_value,
-                    reference_value,
-                )
-                if reference_value > DECIMAL_ZERO
-                else None
+            reference_units = self._units_owned_on(transactions, reference_date)
+            if reference_price is None or reference_units <= DECIMAL_ZERO:
+                values[field_name] = None
+                continue
+
+            reference_price_value = Decimal(reference_price.price)
+            dividend_units = self._dividend_units_between(
+                transactions,
+                start_date=reference_date,
+                end_date=as_of_date,
             )
+            dividend_multiplier = Decimal("1") + (dividend_units / reference_units)
+            total_return_factor = (
+                (latest_price_value / reference_price_value) * dividend_multiplier
+            ) - Decimal("1")
+            values[field_name] = total_return_factor * DECIMAL_100
+
         return PerformanceWindows(**values)
+
+    def _units_owned_on(self, transactions: list[Transaction], value_date: date) -> Decimal:
+        return sum(
+            (Decimal(item.units) for item in transactions if item.date <= value_date),
+            start=DECIMAL_ZERO,
+        )
+
+    def _dividend_units_between(
+        self,
+        transactions: list[Transaction],
+        start_date: date,
+        end_date: date,
+    ) -> Decimal:
+        return sum(
+            (
+                Decimal(item.units)
+                for item in transactions
+                if item.type is TransactionType.DIVIDEND_REINVEST
+                and start_date < item.date <= end_date
+            ),
+            start=DECIMAL_ZERO,
+        )

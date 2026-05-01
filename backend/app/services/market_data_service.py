@@ -1,4 +1,5 @@
 import uuid
+from datetime import date
 
 from app.domain.exceptions import NotFoundError
 from app.models.daily_fund_price import DailyFundPrice
@@ -50,3 +51,31 @@ class MarketDataService:
         stored = self.rate_repository.upsert_many(fund_id, rates)
         self.rate_repository.session.commit()
         return stored
+
+    def list_prices(
+        self,
+        fund_id: uuid.UUID,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        limit: int | None = None,
+    ) -> list[DailyFundPrice]:
+        if self.fund_repository.get(fund_id) is None:
+            raise NotFoundError("Fund not found")
+
+        return self.price_repository.list_for_fund(
+            fund_id, from_date=from_date, to_date=to_date, limit=limit
+        )
+
+    def list_rates(
+        self,
+        fund_id: uuid.UUID,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        limit: int | None = None,
+    ) -> list[LoanRateHistory]:
+        if self.fund_repository.get(fund_id) is None:
+            raise NotFoundError("Fund not found")
+
+        return self.rate_repository.list_for_fund(
+            fund_id, from_date=from_date, to_date=to_date, limit=limit
+        )

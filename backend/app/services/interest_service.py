@@ -33,13 +33,24 @@ class InterestService:
         total_interest_paid = DECIMAL_ZERO
 
         balances_by_date: dict[date, Decimal] = {}
-        for transaction in related_transactions:
+        remaining_units = original_units
+        borrowed_for_allocation = current_borrowed
+        sell_transactions = sorted(
+            [item for item in related_transactions if item.type is TransactionType.SELL],
+            key=lambda item: item.date,
+        )
+        for transaction in sell_transactions:
             if transaction.type is TransactionType.SELL:
-                sold_units = abs(Decimal(transaction.units))
-                reduction_ratio = sold_units / original_units if original_units else DECIMAL_ZERO
-                balances_by_date[transaction.date] = balances_by_date.get(
-                    transaction.date, DECIMAL_ZERO
-                ) - (Decimal(buy_transaction.borrowed_amount) * reduction_ratio)
+                sold_units = min(abs(Decimal(transaction.units)), remaining_units)
+                reduction_ratio = (
+                    sold_units / remaining_units if remaining_units > DECIMAL_ZERO else DECIMAL_ZERO
+                )
+                borrowed_reduction = borrowed_for_allocation * reduction_ratio
+                balances_by_date[transaction.date] = (
+                    balances_by_date.get(transaction.date, DECIMAL_ZERO) - borrowed_reduction
+                )
+                borrowed_for_allocation -= borrowed_reduction
+                remaining_units -= sold_units
 
         day = buy_transaction.date
         while day <= as_of_date:

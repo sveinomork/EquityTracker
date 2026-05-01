@@ -33,12 +33,24 @@ class RateRepository:
             self.session.refresh(item)
         return stored
 
-    def list_for_fund(self, fund_id: uuid.UUID) -> list[LoanRateHistory]:
-        statement = (
-            select(LoanRateHistory)
-            .where(LoanRateHistory.fund_id == fund_id)
-            .order_by(LoanRateHistory.effective_date.asc())
-        )
+    def list_for_fund(
+        self,
+        fund_id: uuid.UUID,
+        from_date: date | None = None,
+        to_date: date | None = None,
+        limit: int | None = None,
+    ) -> list[LoanRateHistory]:
+        statement = select(LoanRateHistory).where(LoanRateHistory.fund_id == fund_id)
+
+        if from_date is not None:
+            statement = statement.where(LoanRateHistory.effective_date >= from_date)
+        if to_date is not None:
+            statement = statement.where(LoanRateHistory.effective_date <= to_date)
+
+        statement = statement.order_by(LoanRateHistory.effective_date.asc())
+        if limit is not None:
+            statement = statement.limit(limit)
+
         return list(self.session.scalars(statement))
 
     def active_rate_on(self, fund_id: uuid.UUID, value_date: date) -> LoanRateHistory | None:

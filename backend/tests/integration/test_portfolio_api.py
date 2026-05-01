@@ -83,6 +83,7 @@ def test_fund_summary_and_lots_include_analytics(client) -> None:
     assert summary["capital_split"]["total_borrowed"] == 4000.0
     assert summary["current_value"] == 8528.0
     assert summary["total_dividend_reinvested"] == 202.0
+    assert summary["performance_windows"]["14d_pct"] is None
     assert summary["performance_windows"]["30d_pct"] > 0
     assert summary["returns"]["return_on_equity_net_pct"] is not None
 
