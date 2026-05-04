@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 
 from app.domain.enums import TransactionType
@@ -49,3 +50,8 @@ class TransactionService:
         created = self.transaction_repository.add(transaction)
         self.transaction_repository.session.commit()
         return created
+
+    def list_transactions(self, fund_id: uuid.UUID | None = None) -> list[Transaction]:
+        if fund_id is None:
+            return self.transaction_repository.list_all()
+        return self.transaction_repository.list_for_fund(fund_id)

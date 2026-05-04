@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 const navItems = [
   { to: "/", label: "Dashboard", icon: "📊" },
   { to: "/data", label: "Legg til data", icon: "➕" },
+  { to: "/data-overview", label: "Dataoversikt", icon: "🗂️" },
 ];
 
 export default function Sidebar() {

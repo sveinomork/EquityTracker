@@ -1,12 +1,13 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { useFunds } from "../../hooks/useFunds";
+import { useTransactions } from "../../hooks/useTransactions";
 import { useAddPrices } from "../../hooks/useMutations";
 import type { DailyPriceCreate } from "../../types/api";
 import LoadingSpinner from "../common/LoadingSpinner";
 
 export default function ManualPriceEntryForm() {
-  const { register, handleSubmit, reset, watch } = useForm<{
+  const { register, handleSubmit, watch, setValue } = useForm<{
     fund_id: string;
     date: string;
     price: number;
@@ -15,12 +16,22 @@ export default function ManualPriceEntryForm() {
   const [entries, setEntries] = useState<DailyPriceCreate[]>([]);
   const fundId = watch("fund_id");
   const { mutate: addPrices, isPending } = useAddPrices(fundId);
+  const { data: transactions } = useTransactions(fundId || undefined);
 
   const fundName = funds?.find((f) => f.id === fundId)?.ticker;
 
+  // Default date to last BUY transaction date when fund is selected
+  useEffect(() => {
+    if (!transactions?.length) return;
+    const lastBuy = [...transactions]
+      .filter((t) => t.type === "BUY")
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    if (lastBuy) setValue("date", lastBuy.date);
+  }, [fundId, transactions, setValue]);
+
   const onAdd = (data: { date: string; price: number }) => {
     setEntries([...entries, { date: data.date, price: data.price }]);
-    reset((prev) => ({ ...prev, date: "", price: 0 }));
+    setValue("price", 0);
   };
 
   const onSubmit = () => {

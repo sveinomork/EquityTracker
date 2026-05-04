@@ -20,6 +20,13 @@ class TransactionRepository:
     def get(self, transaction_id: uuid.UUID) -> Transaction | None:
         return self.session.get(Transaction, transaction_id)
 
+    def list_all(self) -> list[Transaction]:
+        statement = select(Transaction).order_by(
+            Transaction.date.asc(),
+            Transaction.created_at.asc(),
+        )
+        return list(self.session.scalars(statement))
+
     def list_for_fund(self, fund_id: uuid.UUID) -> list[Transaction]:
         statement = (
             select(Transaction)

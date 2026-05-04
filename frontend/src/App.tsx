@@ -4,6 +4,7 @@ import AppLayout from "./components/layout/AppLayout";
 import DashboardPage from "./pages/DashboardPage";
 import FundDetailPage from "./pages/FundDetailPage";
 import DataEntryPage from "./pages/DataEntryPage";
+import DataOverviewPage from "./pages/DataOverviewPage";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -20,6 +21,7 @@ export default function App() {
             <Route path="/" element={<DashboardPage />} />
             <Route path="/fund/:fundId" element={<FundDetailPage />} />
             <Route path="/data" element={<DataEntryPage />} />
+            <Route path="/data-overview" element={<DataOverviewPage />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </AppLayout>

@@ -66,7 +66,7 @@ export default function DataEntryPage() {
               <SyncYahooPricesButton />
             </div>
             <div className="border-t pt-6">
-              <SectionHeader title="Legg til priser manuelt (HHRP)" />
+              <SectionHeader title="Legg til priser manuelt" />
               <ManualPriceEntryForm />
             </div>
           </div>
