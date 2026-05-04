@@ -15,6 +15,31 @@ uv sync
 uv run uvicorn app.main:app --reload
 ```
 
+## Always-On Local App
+
+If you want one local URL and a server that keeps running in the background, use Docker from the repo root:
+
+```powershell
+docker compose up -d --build
+```
+
+Then open:
+
+```text
+http://localhost:8000
+```
+
+The container is configured with `restart: unless-stopped`, so it will come back automatically after Docker restarts.
+
+Useful commands:
+
+```powershell
+docker compose logs -f
+docker compose down
+```
+
+For this mode, the frontend is built into the app image and served by FastAPI on the same URL as the API.
+
 ## Test Backend
 
 ```bash

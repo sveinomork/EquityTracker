@@ -60,6 +60,15 @@ class PriceRepository:
         )
         return self.session.scalar(statement)
 
+    def earliest_on_or_after(self, fund_id: uuid.UUID, value_date: date) -> DailyFundPrice | None:
+        statement = (
+            select(DailyFundPrice)
+            .where(DailyFundPrice.fund_id == fund_id, DailyFundPrice.date >= value_date)
+            .order_by(DailyFundPrice.date.asc())
+            .limit(1)
+        )
+        return self.session.scalar(statement)
+
     def latest_on_or_before_with_max_staleness(
         self,
         fund_id: uuid.UUID,

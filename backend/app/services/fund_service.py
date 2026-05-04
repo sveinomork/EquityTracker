@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from app.domain.exceptions import NotFoundError, ValidationError
 from app.models.fund import Fund
 from app.repositories.fund_repository import FundRepository
-from app.schemas.fund import FundCreate
+from app.schemas.fund import FundCreate, FundTaxConfigUpdate
 
 
 class FundService:
@@ -13,7 +13,12 @@ class FundService:
         self.fund_repository = fund_repository
 
     def create_fund(self, payload: FundCreate) -> Fund:
-        fund = Fund(name=payload.name.strip(), ticker=payload.ticker.strip().upper())
+        fund = Fund(
+            name=payload.name.strip(),
+            ticker=payload.ticker.strip().upper(),
+            is_distributing=payload.is_distributing,
+            manual_taxable_gain_override=payload.manual_taxable_gain_override,
+        )
         try:
             created = self.fund_repository.add(fund)
             self.fund_repository.session.commit()
@@ -29,4 +34,15 @@ class FundService:
         fund = self.fund_repository.get(fund_id)
         if fund is None:
             raise NotFoundError("Fund not found")
+        return fund
+
+    def update_tax_config(self, fund_id: uuid.UUID, payload: FundTaxConfigUpdate) -> Fund:
+        fund = self.get_fund(fund_id)
+        if "is_distributing" in payload.model_fields_set and payload.is_distributing is not None:
+            fund.is_distributing = payload.is_distributing
+        if "manual_taxable_gain_override" in payload.model_fields_set:
+            fund.manual_taxable_gain_override = payload.manual_taxable_gain_override
+        self.fund_repository.session.flush()
+        self.fund_repository.session.commit()
+        self.fund_repository.session.refresh(fund)
         return fund

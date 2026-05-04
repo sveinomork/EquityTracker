@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fundtracker-app
+    environment:
+      DATABASE_URL: sqlite:////app/data/rentefond.db
+      FRONTEND_DIST_DIR: /app/frontend-dist
+      APP_ENV: production
+      API_V1_PREFIX: /api/v1
+      PROJECT_NAME: Fundtracker
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/rentefond.db:/app/data/rentefond.db
+    restart: unless-stopped

@@ -37,6 +37,16 @@ uv run uvicorn app.main:app --reload
 uv run pytest
 ```
 
+## Yahoo kursimport fra tiker.txt
+
+Hent historiske sluttkurser fra Yahoo Finance for tickere i `tiker.txt` fra 2023-01-01:
+
+```bash
+uv run python -m app.scripts.fetch_yahoo_prices --start-date 2023-01-01
+```
+
+Standard output-mappe er `yahoo_prices/` (en JSON-fil per ticker).
+
 ## Migrations
 
 ```bash

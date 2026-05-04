@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     app_env: str = Field(default="development")
     api_v1_prefix: str = Field(default="/api/v1")
     database_url: str = Field(default="sqlite:///./rentefond.db")
+    frontend_dist_dir: str | None = Field(default=None)
 
 
 @lru_cache(maxsize=1)
