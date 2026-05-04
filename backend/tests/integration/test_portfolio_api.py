@@ -562,3 +562,48 @@ def test_rolling_period_gross_change_excludes_reinvested_dividends(client) -> No
 
     # value_t1=10302, value_t0=10000, net_external_cashflow=0 (div not subtracted) => gross=302
     assert m12["brutto_value_change_nok"] == pytest.approx(302.0, abs=0.01)
+
+
+def test_d1_uses_latest_available_price_day_when_as_of_is_stale(client) -> None:
+    fund_response = client.post(
+        "/api/v1/funds",
+        json={"name": "Stale Price Fund", "ticker": "SPF"},
+    )
+    fund_id = fund_response.json()["id"]
+
+    buy_response = client.post(
+        "/api/v1/transactions",
+        json={
+            "fund_id": fund_id,
+            "date": "2026-04-20",
+            "type": "BUY",
+            "units": 100,
+            "price_per_unit": 100,
+            "total_amount": 10000,
+            "borrowed_amount": 0,
+        },
+    )
+    assert buy_response.status_code == 201
+
+    prices_response = client.post(
+        f"/api/v1/funds/{fund_id}/prices",
+        json={
+            "items": [
+                {"date": "2026-04-29", "price": 109},
+                {"date": "2026-04-30", "price": 110},
+            ]
+        },
+    )
+    assert prices_response.status_code == 201
+
+    summary_response = client.get(
+        f"/api/v1/funds/{fund_id}/summary",
+        params={"as_of_date": "2026-05-04"},
+    )
+    assert summary_response.status_code == 200
+    d1 = summary_response.json()["period_metrics"]["1d"]
+
+    assert d1["end_date"] == "2026-04-30"
+    assert d1["start_date"] == "2026-04-29"
+    assert d1["brutto_value_change_nok"] == pytest.approx(100.0, abs=0.01)
+    assert d1["return_split"]["gross_pct"] == pytest.approx((100.0 / 10900.0) * 100.0, abs=0.01)

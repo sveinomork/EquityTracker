@@ -141,6 +141,7 @@ class PortfolioAnalyticsService:
             lots=lots,
             rates=rates,
             latest_price_value=latest_price_value,
+            latest_price_date=latest_price.date if latest_price is not None else effective_date,
             as_of_date=effective_date,
         )
         total_return = period_metrics.total.return_split
@@ -360,6 +361,7 @@ class PortfolioAnalyticsService:
             lots=lots,
             rates=rates,
             latest_price_value=latest_price_value,
+            latest_price_date=latest_price.date if latest_price is not None else effective_date,
             as_of_date=effective_date,
         )
         return FundPeriodReconciliation(
@@ -496,6 +498,7 @@ class PortfolioAnalyticsService:
         lots: list[LotComputation],
         rates: list,
         latest_price_value: Decimal,
+        latest_price_date: date,
         as_of_date: date,
     ) -> PeriodMetricsByWindow:
         rows = self._build_fund_period_reconciliation_rows(
@@ -504,6 +507,7 @@ class PortfolioAnalyticsService:
             lots=lots,
             rates=rates,
             latest_price_value=latest_price_value,
+            latest_price_date=latest_price_date,
             as_of_date=as_of_date,
         )
 
@@ -548,10 +552,10 @@ class PortfolioAnalyticsService:
         lots: list[LotComputation],
         rates: list,
         latest_price_value: Decimal,
+        latest_price_date: date,
         as_of_date: date,
     ) -> list[FundPeriodReconciliationRow]:
         earliest_buy = self._first_buy_date(transactions) or as_of_date
-        units_t1 = sum((item.current_units for item in lots), start=DECIMAL_ZERO)
         total_cost = sum(
             (
                 Decimal(item.total_amount)
@@ -562,12 +566,13 @@ class PortfolioAnalyticsService:
         )
         rows: list[FundPeriodReconciliationRow] = []
         for key in PERIOD_KEYS:
-            start_date = self._period_start_for_key(key, as_of_date)
+            period_end = latest_price_date if key == "d1" else as_of_date
+            start_date = self._period_start_for_key(key, period_end)
             effective_start = earliest_buy if key == "total" else start_date
-            if effective_start > as_of_date:
-                effective_start = as_of_date
+            if effective_start > period_end:
+                effective_start = period_end
 
-            days = max((as_of_date - effective_start).days, 1)
+            days = max((period_end - effective_start).days, 1)
             start_price_value = self._resolve_start_price(
                 fund.id,
                 effective_start,
@@ -576,6 +581,7 @@ class PortfolioAnalyticsService:
             )
 
             units_t0 = self._fund_units_as_of(transactions, effective_start)
+            units_t1 = self._fund_units_as_of(transactions, period_end)
             value_t1 = units_t1 * latest_price_value
             if key == "total":
                 value_t0 = total_cost
@@ -584,12 +590,12 @@ class PortfolioAnalyticsService:
             dividends_in_period = self._sum_dividends_for_fund_between(
                 transactions,
                 effective_start,
-                as_of_date,
+                period_end,
             )
             net_external_cashflow = self._sum_external_cashflow_for_fund_between(
                 transactions,
                 effective_start,
-                as_of_date,
+                period_end,
             )
             if key == "total":
                 gross_value_change = value_t1 - value_t0
@@ -605,7 +611,7 @@ class PortfolioAnalyticsService:
                         related_transactions=lot.related_transactions,
                         rates=rates,
                         start_date=effective_start,
-                        end_date=as_of_date,
+                        end_date=period_end,
                     )
                     for lot in lots
                 ),
@@ -613,7 +619,7 @@ class PortfolioAnalyticsService:
             )
             interest_tax_credit = allocated_interest_cost * DECIMAL_22_PCT
 
-            regime = self._resolve_tax_regime(fund, as_of_date)
+            regime = self._resolve_tax_regime(fund, period_end)
             running_dividend_tax = (
                 dividends_in_period * DECIMAL_22_PCT if regime == "distributing_pre_2026" else DECIMAL_ZERO
             )
@@ -641,7 +647,7 @@ class PortfolioAnalyticsService:
                 FundPeriodReconciliationRow(
                     period_key=key,
                     start_date=effective_start,
-                    end_date=as_of_date,
+                    end_date=period_end,
                     days=days,
                     regime=regime,
                     units_t0=units_t0,

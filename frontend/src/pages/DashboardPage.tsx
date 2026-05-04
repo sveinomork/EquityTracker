@@ -18,6 +18,26 @@ export default function DashboardPage() {
 
   const { funds, totals } = portfolio;
   const portfolioTotal = totals.total_return;
+  const weightedAnnualizedReturn = (() => {
+    const weightedEntries = funds
+      .map((fund) => ({
+        cost: fund.capital_split.total_cost,
+        annualized: fund.returns.annualized_return_on_cost_weighted_pct,
+      }))
+      .filter((entry) => entry.annualized != null && entry.cost > 0);
+
+    const totalCost = weightedEntries.reduce(
+      (sum, entry) => sum + entry.cost,
+      0,
+    );
+    if (totalCost <= 0) return null;
+
+    const weightedSum = weightedEntries.reduce(
+      (sum, entry) => sum + (entry.annualized as number) * entry.cost,
+      0,
+    );
+    return weightedSum / totalCost;
+  })();
   const periodOrder: Array<keyof typeof portfolio.period_metrics> = [
     "1d",
     "7d",
@@ -47,7 +67,7 @@ export default function DashboardPage() {
         <p className="text-sm text-gray-500 mt-1">Per {portfolio.as_of_date}</p>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <StatCard
           title="Investert"
           value={nok(totals.total_equity + totals.total_borrowed)}
@@ -59,14 +79,15 @@ export default function DashboardPage() {
           highlight="neutral"
         />
         <StatCard
-          title="Netto egenkapital"
-          value={nok(totals.net_equity_value)}
-          highlight={totals.net_equity_value >= 0 ? "positive" : "negative"}
-        />
-        <StatCard
-          title="True Net Worth"
-          value={nok(totals.true_net_worth_nok)}
-          highlight={totals.true_net_worth_nok >= 0 ? "positive" : "negative"}
+          title="Vektet ann. avkastning"
+          value={pct(weightedAnnualizedReturn)}
+          highlight={
+            weightedAnnualizedReturn == null
+              ? "neutral"
+              : weightedAnnualizedReturn >= 0
+                ? "positive"
+                : "negative"
+          }
         />
       </div>
 
