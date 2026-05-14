@@ -10,6 +10,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, numeric_c
 
 
 class Transaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """ORM model representing one portfolio transaction."""
     __tablename__ = "transactions"
     __table_args__ = (
         Index("ix_transactions_fund_date", "fund_id", "date"),

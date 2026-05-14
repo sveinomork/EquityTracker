@@ -33,6 +33,16 @@ export interface TransactionCreate {
   borrowed_amount: number;
 }
 
+export interface TransactionUpdate {
+  lot_id?: string | null;
+  date?: string;
+  type?: TransactionType;
+  units?: number;
+  price_per_unit?: number;
+  total_amount?: number;
+  borrowed_amount?: number;
+}
+
 export interface Transaction {
   id: string;
   fund_id: string;
@@ -195,8 +205,10 @@ export interface FundSummary {
   net_equity_value: number;
   total_dividend_reinvested: number;
   total_interest_paid: number;
+  realized_profit_from_sold_positions: number;
   average_days_owned: number;
   profit_loss_gross: number;
+  profit_loss_gross_including_realized: number;
   profit_loss_net: number;
   returns: ReturnMetrics;
   borrowing_costs: BorrowingCosts;
@@ -249,6 +261,15 @@ export interface PortfolioTotals {
   total_return: ReturnSplitMetrics;
   true_net_worth_nok: number;
   true_net_worth: TrueNetWorthBreakdown;
+}
+
+export interface PortfolioHistoryPoint {
+  date: string;
+  market_value: number;
+  total_equity: number;
+  total_borrowed: number;
+  total_interest_paid: number;
+  net_value: number;
 }
 
 export interface PortfolioSummary {

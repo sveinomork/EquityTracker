@@ -15,6 +15,7 @@ app = FastAPI(title=settings.project_name, lifespan=lifespan)
 
 
 def _resolve_frontend_dist_dir() -> Path | None:
+    """Resolve the frontend build directory if it exists."""
     if settings.frontend_dist_dir:
         frontend_dist_dir = Path(settings.frontend_dist_dir)
     else:
@@ -24,6 +25,7 @@ def _resolve_frontend_dist_dir() -> Path | None:
 
 
 def _is_backend_only_path(path: str) -> bool:
+    """Return whether a path belongs to backend-owned routes."""
     normalized = path.strip("/")
     backend_prefixes = [settings.api_v1_prefix.strip("/"), "health", "assets"]
     return any(
@@ -53,27 +55,32 @@ if frontend_dist_dir is not None:
 
 @app.get("/health")
 def healthcheck() -> dict[str, str]:
+    """Return a simple health status for uptime checks."""
     return {"status": "ok"}
 
 
 @app.exception_handler(NotFoundError)
 async def handle_not_found(_: Request, exc: NotFoundError) -> JSONResponse:
+    """Map domain not-found errors to HTTP 404 responses."""
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
 @app.exception_handler(ValidationError)
 async def handle_validation_error(_: Request, exc: ValidationError) -> JSONResponse:
+    """Map domain validation errors to HTTP 400 responses."""
     return JSONResponse(status_code=400, content={"detail": str(exc)})
 
 
 if frontend_dist_dir is not None:
     @app.get("/", include_in_schema=False)
     async def frontend_index() -> FileResponse:
+        """Serve the frontend index page for the root route."""
         return FileResponse(frontend_dist_dir / "index.html")
 
 
     @app.get("/{full_path:path}", include_in_schema=False)
     async def frontend_routes(full_path: str) -> FileResponse:
+        """Serve frontend static files or fallback to index routing."""
         if _is_backend_only_path(full_path):
             raise HTTPException(status_code=404, detail="Not Found")
 

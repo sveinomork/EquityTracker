@@ -50,4 +50,4 @@ uv run pytest
 ## Notes
 
 - The backend supports lot-based transactions, historical prices, and loan rate history.
-- Database settings are environment-driven for SQLite (dev) and PostgreSQL (production).
+- Database settings are environment-driven, with PostgreSQL as the default database.

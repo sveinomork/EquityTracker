@@ -20,6 +20,7 @@ def add_rates(
     payload: LoanRateBatchCreate,
     service: MarketDataServiceDependency,
 ) -> list[LoanRateRead]:
+    """Create one or more loan rate entries for a fund."""
     return [LoanRateRead.model_validate(rate) for rate in service.add_rates(fund_id, payload)]
 
 
@@ -31,5 +32,6 @@ def list_rates(
     to_date: ToDateQuery = None,
     limit: LimitQuery = None,
 ) -> list[LoanRateRead]:
+    """List stored loan rates for a fund with optional filters."""
     rates = service.list_rates(fund_id, from_date=from_date, to_date=to_date, limit=limit)
     return [LoanRateRead.model_validate(rate) for rate in rates]

@@ -18,14 +18,17 @@ metadata = MetaData(
 
 
 class Base(DeclarativeBase):
+    """Base SQLAlchemy declarative class for all ORM models."""
     metadata = metadata
 
 
 class UUIDPrimaryKeyMixin:
+    """Mixin that adds a UUID primary key column."""
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
 
 
 class TimestampMixin:
+    """Mixin that adds created and updated timestamp columns."""
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
@@ -37,8 +40,10 @@ class TimestampMixin:
 
 
 def numeric_column(scale: int = 6) -> Mapped[Decimal]:
+    """Return a numeric mapped column with fixed precision and scale."""
     return mapped_column(Numeric(18, scale))
 
 
 def date_column() -> Mapped[date]:
+    """Return a mapped DATE column."""
     return mapped_column(Date)

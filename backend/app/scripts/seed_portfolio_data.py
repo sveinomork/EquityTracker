@@ -6,6 +6,7 @@ from app.scripts.import_transactions_seed import main as import_transactions_mai
 
 
 def main() -> None:
+    """Run all seed scripts in the expected execution order."""
     print("Seeding transactions...")
     import_transactions_main()
     print("Seeding loan rates...")

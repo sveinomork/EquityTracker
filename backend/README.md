@@ -3,6 +3,11 @@
 FastAPI backend for tracking leveraged fixed income fund portfolios with lot-based accounting,
 historical prices, loan-rate history, and analytics focused on return on equity.
 
+## Komplett API-dokumentasjon
+
+Se [API.md](./API.md) for full dokumentasjon av alle endpoints, request/response-modeller,
+valideringsregler, feilhåndtering og eksempler.
+
 ## Local development
 
 ```bash
@@ -55,19 +60,13 @@ uv run alembic upgrade head
 
 ## Docker
 
-Build and run API with SQLite-backed defaults:
+Build and run API with PostgreSQL-backed defaults:
 
 ```bash
-docker compose up --build api
+docker compose up --build
 ```
 
-Run API with PostgreSQL profile:
-
-```bash
-docker compose --profile postgres up --build
-```
-
-When using PostgreSQL profile, configure `DATABASE_URL` in `.env` as:
+Configure `DATABASE_URL` in `.env` as:
 
 ```env
 DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/equitytracker

@@ -16,6 +16,7 @@ from app.scripts.fund_identity import canonicalize_fund
 
 @dataclass(frozen=True)
 class SeedTransaction:
+    """Seed entry describing one BUY transaction to import."""
     fund_name: str
     fund_ticker: str
     trade_date: date
@@ -91,6 +92,7 @@ SEED_TRANSACTIONS: list[SeedTransaction] = [
 
 
 def _get_or_create_fund(session: Session, name: str, ticker: str) -> Fund:
+    """Return an existing canonical fund or create it when missing."""
     canonical_name, canonical_ticker = canonicalize_fund(name, ticker)
     statement = select(Fund).where(Fund.ticker == canonical_ticker)
     fund = session.scalar(statement)
@@ -109,6 +111,7 @@ def _get_or_create_fund(session: Session, name: str, ticker: str) -> Fund:
 def _get_existing_transaction(
     session: Session, fund_id: object, tx: SeedTransaction
 ) -> Transaction | None:
+    """Find an existing BUY transaction matching seed identity fields."""
     statement = select(Transaction).where(
         Transaction.fund_id == fund_id,
         Transaction.date == tx.trade_date,
@@ -120,10 +123,12 @@ def _get_existing_transaction(
 
 
 def _price_per_unit(total_amount: Decimal, units: Decimal) -> Decimal:
+    """Calculate and quantize unit price from total amount and units."""
     return (total_amount / units).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
 
 
 def main() -> None:
+    """Upsert seeded BUY transactions and print processing totals."""
     create_db_and_tables()
 
     inserted = 0

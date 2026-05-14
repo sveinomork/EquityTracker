@@ -20,6 +20,7 @@ def add_prices(
     payload: DailyFundPriceBatchCreate,
     service: MarketDataServiceDependency,
 ) -> list[DailyFundPriceRead]:
+    """Create one or more daily prices for a fund."""
     return [
         DailyFundPriceRead.model_validate(price) for price in service.add_prices(fund_id, payload)
     ]
@@ -33,5 +34,6 @@ def list_prices(
     to_date: ToDateQuery = None,
     limit: LimitQuery = None,
 ) -> list[DailyFundPriceRead]:
+    """List stored daily prices for a fund with optional filters."""
     prices = service.list_prices(fund_id, from_date=from_date, to_date=to_date, limit=limit)
     return [DailyFundPriceRead.model_validate(price) for price in prices]

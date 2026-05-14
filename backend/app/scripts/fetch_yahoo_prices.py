@@ -22,11 +22,13 @@ LINE_PATTERN = re.compile(r"^(?P<name>.+?)\s*\((?P<symbol>[^()]+)\)\s*$")
 
 @dataclass(frozen=True)
 class TickerEntry:
+    """One parsed ticker line from the ticker input file."""
     name: str
     symbol: str
 
 
 def parse_ticker_file(ticker_file: Path) -> list[TickerEntry]:
+    """Parse ticker definitions from text file entries."""
     entries: list[TickerEntry] = []
     for raw_line in ticker_file.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
@@ -47,11 +49,13 @@ def parse_ticker_file(ticker_file: Path) -> list[TickerEntry]:
 
 
 def _slugify(value: str) -> str:
+    """Convert a string to a filesystem-safe slug."""
     slug = re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower()
     return slug or "unknown"
 
 
 def _to_price_records(history_df: object) -> list[dict[str, object]]:
+    """Convert Yahoo history dataframe into serializable price records."""
     if history_df is None or getattr(history_df, "empty", True):
         return []
 
@@ -74,6 +78,7 @@ def _to_price_records(history_df: object) -> list[dict[str, object]]:
 
 
 def fetch_yahoo_prices(symbol: str, start_date: date, end_date: date) -> list[dict[str, object]]:
+    """Fetch close prices from Yahoo Finance for a symbol and date range."""
     # yfinance treats end as exclusive; add one day so the requested end date is included.
     history = yf.download(
         symbol,
@@ -91,6 +96,7 @@ def write_price_file(
     entry: TickerEntry,
     records: list[dict[str, object]],
 ) -> Path:
+    """Write fetched price records to one JSON file."""
     output_dir.mkdir(parents=True, exist_ok=True)
     file_name = f"{_slugify(entry.name)}-{_slugify(entry.symbol)}.json"
     output_path = output_dir / file_name
@@ -99,6 +105,7 @@ def write_price_file(
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the CLI argument parser for Yahoo price import."""
     parser = argparse.ArgumentParser(
         description=(
             "Fetch historical close prices from Yahoo Finance for tickers in a text file "
@@ -138,6 +145,7 @@ def _upsert_to_db(
     entry: TickerEntry,
     records: list[dict[str, object]],
 ) -> int:
+    """Upsert fetched prices into the database and return row count."""
     canonical_name, ticker_key = canonicalize_fund(entry.name, entry.symbol)
     fund = fund_repo.get_by_ticker(ticker_key)
     if fund is None:
@@ -163,6 +171,7 @@ def _upsert_to_db(
 
 
 def main() -> None:
+    """Run the Yahoo fetch CLI flow and persist returned data."""
     parser = build_parser()
     args = parser.parse_args()
 

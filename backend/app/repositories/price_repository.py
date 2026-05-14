@@ -8,10 +8,13 @@ from app.models.daily_fund_price import DailyFundPrice
 
 
 class PriceRepository:
+    """Data-access operations for daily fund prices."""
     def __init__(self, session: Session) -> None:
+        """Initialize the repository with an active database session."""
         self.session = session
 
     def upsert_many(self, fund_id: uuid.UUID, prices: list[DailyFundPrice]) -> list[DailyFundPrice]:
+        """Insert or update many prices for a fund and return stored rows."""
         stored: list[DailyFundPrice] = []
         for price in prices:
             statement = select(DailyFundPrice).where(
@@ -38,6 +41,7 @@ class PriceRepository:
         to_date: date | None = None,
         limit: int | None = None,
     ) -> list[DailyFundPrice]:
+        """List prices for a fund with optional date filtering and limit."""
         statement = select(DailyFundPrice).where(DailyFundPrice.fund_id == fund_id)
 
         if from_date is not None:
@@ -52,6 +56,7 @@ class PriceRepository:
         return list(self.session.scalars(statement))
 
     def latest_on_or_before(self, fund_id: uuid.UUID, value_date: date) -> DailyFundPrice | None:
+        """Return the latest price on or before a date."""
         statement = (
             select(DailyFundPrice)
             .where(DailyFundPrice.fund_id == fund_id, DailyFundPrice.date <= value_date)
@@ -61,6 +66,7 @@ class PriceRepository:
         return self.session.scalar(statement)
 
     def earliest_on_or_after(self, fund_id: uuid.UUID, value_date: date) -> DailyFundPrice | None:
+        """Return the earliest price on or after a date."""
         statement = (
             select(DailyFundPrice)
             .where(DailyFundPrice.fund_id == fund_id, DailyFundPrice.date >= value_date)
@@ -75,6 +81,7 @@ class PriceRepository:
         value_date: date,
         max_staleness_days: int,
     ) -> DailyFundPrice | None:
+        """Return the latest price only if it is within the allowed staleness window."""
         latest = self.latest_on_or_before(fund_id, value_date)
         if latest is None:
             return None

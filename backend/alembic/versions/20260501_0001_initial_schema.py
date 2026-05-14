@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 
 revision: str = "20260501_0001"
@@ -20,6 +21,13 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     transaction_type = sa.Enum("BUY", "SELL", "DIVIDEND_REINVEST", name="transaction_type")
     transaction_type.create(op.get_bind(), checkfirst=True)
+    transaction_type_for_table = postgresql.ENUM(
+        "BUY",
+        "SELL",
+        "DIVIDEND_REINVEST",
+        name="transaction_type",
+        create_type=False,
+    )
 
     op.create_table(
         "funds",
@@ -37,7 +45,7 @@ def upgrade() -> None:
         sa.Column("fund_id", sa.Uuid(), nullable=False),
         sa.Column("lot_id", sa.Uuid(), nullable=True),
         sa.Column("date", sa.Date(), nullable=False),
-        sa.Column("type", transaction_type, nullable=False),
+        sa.Column("type", transaction_type_for_table, nullable=False),
         sa.Column("units", sa.Numeric(18, 6), nullable=False),
         sa.Column("price_per_unit", sa.Numeric(18, 6), nullable=False),
         sa.Column("total_amount", sa.Numeric(18, 2), nullable=False),

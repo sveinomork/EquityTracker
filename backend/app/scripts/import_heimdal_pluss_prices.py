@@ -30,6 +30,7 @@ HEIMDAL_JSON = _BACKEND_ROOT / "heimdal.json"
 
 
 def main() -> None:
+    """Import Heimdal Plus prices from JSON and upsert into the database."""
     create_db_and_tables()
 
     if not HEIMDAL_JSON.exists():

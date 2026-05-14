@@ -1,23 +1,65 @@
 import { useForm } from "react-hook-form";
+import { isAxiosError } from "axios";
+import { useFundLots } from "../../hooks/useFundAnalytics";
 import { useFunds } from "../../hooks/useFunds";
 import { useCreateTransaction } from "../../hooks/useMutations";
 import type { TransactionCreate } from "../../types/api";
 import LoadingSpinner from "../common/LoadingSpinner";
 import ErrorMessage from "../common/ErrorMessage";
 
+type TransactionFormValues = Omit<TransactionCreate, "price_per_unit"> & {
+  price_per_unit?: number;
+};
+
+function extractApiErrorMessage(error: unknown): string {
+  if (!isAxiosError(error)) return "Noe gikk galt.";
+
+  const payload = error.response?.data as
+    | { detail?: string | Array<{ msg?: string }> }
+    | undefined;
+  const detail = payload?.detail;
+
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const first = detail.find(
+      (entry) => typeof entry?.msg === "string" && entry.msg.trim(),
+    );
+    if (first?.msg) return first.msg;
+  }
+
+  return error.message || "Noe gikk galt.";
+}
+
 export default function AddTransactionForm() {
   const { register, handleSubmit, reset, watch, formState } =
-    useForm<TransactionCreate>({
-      defaultValues: { type: "BUY", units: 1, borrowed_amount: 0 },
+    useForm<TransactionFormValues>({
+      defaultValues: {
+        type: "BUY",
+        units: 1,
+        total_amount: 0,
+        borrowed_amount: 0,
+      },
     });
   const { mutate, isPending, isError, error } = useCreateTransaction();
   const { data: funds, isLoading: fundsLoading } = useFunds();
+  const selectedFundId = watch("fund_id");
+  const transactionType = watch("type");
+  const isBuy = transactionType === "BUY";
+  const requiresLot = transactionType === "DIVIDEND_REINVEST";
+  const { data: fundLots } = useFundLots(selectedFundId || "");
 
-  const totalAmount = watch("units") * watch("price_per_unit");
-
-  const onSubmit = (data: TransactionCreate) => {
+  const onSubmit = (data: TransactionFormValues) => {
+    const units = data.units || 1;
+    const totalAmount = data.total_amount || 0;
+    const pricePerUnit = units > 0 ? totalAmount / units : 0;
+    const borrowedAmount =
+      isBuy && Number.isFinite(data.borrowed_amount) ? data.borrowed_amount : 0;
     mutate(
-      { ...data, total_amount: totalAmount },
+      {
+        ...data,
+        borrowed_amount: borrowedAmount,
+        price_per_unit: pricePerUnit,
+      } as TransactionCreate,
       {
         onSuccess: () => {
           reset();
@@ -67,6 +109,32 @@ export default function AddTransactionForm() {
         </select>
       </div>
 
+      {requiresLot && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Posisjon (lot)
+          </label>
+          <select
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {...register("lot_id", {
+              required: "Velg posisjon for utbytte",
+            })}
+          >
+            <option value="">-- Velg posisjon --</option>
+            {fundLots?.lots.map((lot) => (
+              <option key={lot.lot_id} value={lot.lot_id}>
+                {lot.purchase_date} - {lot.current_units.toFixed(4)} andeler
+              </option>
+            ))}
+          </select>
+          {formState.errors.lot_id && (
+            <span className="text-red-500 text-xs mt-1">
+              {formState.errors.lot_id.message}
+            </span>
+          )}
+        </div>
+      )}
+
       <div>
         <label className="block text-sm font-medium text-gray-700 mb-1">
           Dato
@@ -99,21 +167,6 @@ export default function AddTransactionForm() {
             })}
           />
         </div>
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Pris per andel
-          </label>
-          <input
-            type="number"
-            step="0.01"
-            placeholder="100.00"
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            {...register("price_per_unit", {
-              required: "Pris er påkrevd",
-              valueAsNumber: true,
-            })}
-          />
-        </div>
       </div>
 
       <div>
@@ -122,26 +175,32 @@ export default function AddTransactionForm() {
         </label>
         <input
           type="number"
-          readOnly
-          value={totalAmount.toFixed(2)}
-          className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-lg text-gray-600"
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-gray-700 mb-1">
-          Lånt beløp (NOK)
-        </label>
-        <input
-          type="number"
           step="0.01"
-          placeholder="0.00"
+          placeholder="1000.00"
           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-          {...register("borrowed_amount", { valueAsNumber: true })}
+          {...register("total_amount", {
+            required: "Total beløp er påkrevd",
+            valueAsNumber: true,
+          })}
         />
       </div>
 
-      {isError && <ErrorMessage message={String(error?.message)} />}
+      {isBuy && (
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Lånt beløp (NOK)
+          </label>
+          <input
+            type="number"
+            step="0.01"
+            placeholder="0.00"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            {...register("borrowed_amount", { valueAsNumber: true })}
+          />
+        </div>
+      )}
+
+      {isError && <ErrorMessage message={extractApiErrorMessage(error)} />}
 
       <button
         type="submit"

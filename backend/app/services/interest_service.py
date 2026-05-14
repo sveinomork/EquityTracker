@@ -15,6 +15,7 @@ DECIMAL_366 = Decimal("366")
 
 @dataclass(slots=True)
 class InterestBreakdown:
+    """Computed interest totals and current borrowing cost metrics for a lot."""
     total_paid: Decimal
     current_outstanding_borrowed: Decimal
     current_monthly_cost: Decimal
@@ -22,6 +23,7 @@ class InterestBreakdown:
 
 
 class InterestService:
+    """Interest calculation logic for leveraged lot positions."""
     def calculate_for_lot(
         self,
         buy_transaction: Transaction,
@@ -29,6 +31,7 @@ class InterestService:
         rates: list[LoanRateHistory],
         as_of_date: date,
     ) -> InterestBreakdown:
+        """Calculate cumulative and current borrowing costs for one lot."""
         balances_by_date = self._build_balance_adjustments(buy_transaction, related_transactions)
         current_borrowed = self._borrowed_balance_on_date(
             buy_transaction=buy_transaction,
@@ -69,6 +72,7 @@ class InterestService:
         start_date: date,
         end_date: date,
     ) -> Decimal:
+        """Calculate borrowing interest accrued within a date range."""
         effective_start = max(start_date, buy_transaction.date)
         if end_date <= effective_start:
             return DECIMAL_ZERO
@@ -102,6 +106,7 @@ class InterestService:
         rates: list[LoanRateHistory],
         value_date: date,
     ) -> LoanRateHistory | None:
+        """Return the latest effective rate on or before a date."""
         active_rate: LoanRateHistory | None = None
         for rate in rates:
             if rate.effective_date <= value_date:
@@ -115,12 +120,14 @@ class InterestService:
         rates: list[LoanRateHistory],
         value_date: date,
     ) -> Decimal:
+        """Return nominal rate value for a date, or zero if no rate is active."""
         active_rate = self._find_active_rate(rates, value_date)
         if active_rate is None:
             return DECIMAL_ZERO
         return Decimal(active_rate.nominal_rate)
 
     def _days_in_year(self, value_date: date) -> Decimal:
+        """Return the number of days in the date's year as Decimal."""
         return DECIMAL_366 if calendar.isleap(value_date.year) else DECIMAL_365
 
     def _build_balance_adjustments(
@@ -128,6 +135,7 @@ class InterestService:
         buy_transaction: Transaction,
         related_transactions: list[Transaction],
     ) -> dict[date, Decimal]:
+        """Build per-date borrowed-balance reductions caused by SELL transactions."""
         original_units = Decimal(buy_transaction.units)
         current_borrowed = Decimal(buy_transaction.borrowed_amount)
         balances_by_date: dict[date, Decimal] = {}
@@ -156,6 +164,7 @@ class InterestService:
         balances_by_date: dict[date, Decimal],
         value_date: date,
     ) -> Decimal:
+        """Return outstanding borrowed balance for a lot at a given date."""
         current_borrowed = Decimal(buy_transaction.borrowed_amount)
         for day, delta in sorted(balances_by_date.items()):
             if day <= value_date:
@@ -173,6 +182,7 @@ class InterestService:
         rates: list[LoanRateHistory],
         as_of_date: date,
     ) -> Decimal:
+        """Accumulate day-by-day interest from buy date through as_of_date."""
         current_borrowed = Decimal(buy_transaction.borrowed_amount)
         total_interest_paid = DECIMAL_ZERO
         day = buy_transaction.date
@@ -196,6 +206,7 @@ class InterestService:
         current_rate: LoanRateHistory | None,
         as_of_date: date,
     ) -> Decimal:
+        """Estimate the current month borrowing cost from active rate and balance."""
         if current_rate is None or current_borrowed <= DECIMAL_ZERO:
             return DECIMAL_ZERO
 

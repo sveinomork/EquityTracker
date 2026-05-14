@@ -30,6 +30,7 @@ DECIMAL_ZERO = Decimal("0")
 
 @dataclass(slots=True)
 class CleanupCandidate:
+    """Fund entry marked for optional deletion by cleanup script."""
     fund_id: str
     ticker: str
     name: str
@@ -37,6 +38,7 @@ class CleanupCandidate:
 
 
 def _parse_args() -> argparse.Namespace:
+    """Parse command-line arguments for cleanup execution."""
     parser = argparse.ArgumentParser(description="Delete funds with no market value")
     parser.add_argument(
         "--apply",
@@ -53,6 +55,7 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _find_candidates(as_of_date: date) -> list[CleanupCandidate]:
+    """Find funds whose current market value is zero or negative."""
     with SessionLocal() as session:
         funds = list(session.scalars(select(Fund).order_by(Fund.ticker.asc())))
         service = PortfolioAnalyticsService(
@@ -79,6 +82,7 @@ def _find_candidates(as_of_date: date) -> list[CleanupCandidate]:
 
 
 def _apply_deletions(candidates: list[CleanupCandidate]) -> int:
+    """Delete all candidate funds and return the number removed."""
     if not candidates:
         return 0
 
@@ -99,6 +103,7 @@ def _apply_deletions(candidates: list[CleanupCandidate]) -> int:
 
 
 def main() -> None:
+    """Run dry-run or apply cleanup for funds without market value."""
     args = _parse_args()
     create_db_and_tables()
 

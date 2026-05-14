@@ -9,6 +9,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, numeric_c
 
 
 class DailyFundPrice(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """ORM model storing one daily NAV/price for a fund."""
     __tablename__ = "daily_fund_prices"
     __table_args__ = (
         UniqueConstraint("fund_id", "date", name="uq_daily_fund_prices_fund_id_date"),

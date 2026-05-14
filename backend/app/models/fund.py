@@ -7,6 +7,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, numeric_c
 
 
 class Fund(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """ORM model representing an investment fund."""
     __tablename__ = "funds"
 
     name: Mapped[str] = mapped_column(String(255), nullable=False)

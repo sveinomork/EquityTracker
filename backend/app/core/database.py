@@ -13,10 +13,12 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 
 def create_db_and_tables() -> None:
+    """Create all database tables registered in SQLAlchemy metadata."""
     Base.metadata.create_all(bind=engine)
 
 
 def get_db_session() -> Generator[Session, None, None]:
+    """Yield a database session and ensure it is closed after use."""
     session = SessionLocal()
     try:
         yield session

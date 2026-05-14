@@ -9,6 +9,7 @@ from app.models.base import Base, TimestampMixin, UUIDPrimaryKeyMixin, numeric_c
 
 
 class LoanRateHistory(UUIDPrimaryKeyMixin, TimestampMixin, Base):
+    """ORM model storing historical borrowing rates per fund."""
     __tablename__ = "loan_rate_history"
     __table_args__ = (
         UniqueConstraint(

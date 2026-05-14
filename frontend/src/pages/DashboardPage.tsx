@@ -1,4 +1,5 @@
 import { usePortfolioSummary } from "../hooks/usePortfolioSummary";
+import { usePortfolioHistory } from "../hooks/usePortfolioHistory";
 import { useNavigate } from "react-router-dom";
 import StatCard from "../components/common/StatCard";
 import LoadingSpinner from "../components/common/LoadingSpinner";
@@ -7,9 +8,36 @@ import EmptyState from "../components/common/EmptyState";
 import SectionHeader from "../components/common/SectionHeader";
 import PnlBadge from "../components/common/PnlBadge";
 import { nok, pct } from "../utils/dates";
+import {
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
+
+const fmtYAxis = (v: number) =>
+  v >= 1_000_000
+    ? `${(v / 1_000_000).toFixed(1)}M`
+    : v >= 1_000
+      ? `${(v / 1_000).toFixed(0)}k`
+      : String(v);
+
+const fmtDateLabel = (value: string) => {
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${day}.${month}.${year.slice(2)}`;
+};
 
 export default function DashboardPage() {
   const { data: portfolio, isLoading, isError } = usePortfolioSummary();
+  const { data: history } = usePortfolioHistory();
   const navigate = useNavigate();
 
   if (isLoading) return <LoadingSpinner label="Laster portefølje..." />;
@@ -209,6 +237,204 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+
+      {/* Capital structure charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Chart 1: Lån, Innskudd inkl rente, Markedsverdi */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-sm font-semibold text-gray-700 mb-1">
+            Kapitalstruktur
+          </p>
+          <p className="text-xs text-gray-400 mb-3">
+            Innskudd egenkapital inkl. påløpt rente
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart
+              data={[
+                { name: "Lån", value: totals.total_borrowed },
+                {
+                  name: "Innskudd inkl rente",
+                  value: totals.total_equity + totals.total_interest_paid,
+                },
+                { name: "Markedsverdi", value: totals.current_value },
+              ]}
+              margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+              <YAxis tickFormatter={fmtYAxis} tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(value: number) => [nok(value), ""]}
+                labelStyle={{ fontWeight: 600 }}
+              />
+              <Bar dataKey="value" radius={[4, 4, 0, 0]}>
+                <Cell fill="#ef4444" />
+                <Cell fill="#3b82f6" />
+                <Cell fill="#22c55e" />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Chart 2: Markedsverdi breakdown (lån + innskudd inkl rente + nettovekst) */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-sm font-semibold text-gray-700 mb-1">
+            Markedsverdi — sammensetning
+          </p>
+          <p className="text-xs text-gray-400 mb-3">
+            Nettovekst = Markedsverdi − Lån − Innskudd − Rente
+          </p>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart
+              data={[
+                {
+                  name: "Markedsverdi",
+                  Lån: totals.total_borrowed,
+                  Innskudd: totals.total_equity,
+                  Rente: totals.total_interest_paid,
+                  Nettovekst:
+                    totals.current_value -
+                    totals.total_borrowed -
+                    totals.total_equity -
+                    totals.total_interest_paid,
+                },
+              ]}
+              margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontSize: 12 }} />
+              <YAxis tickFormatter={fmtYAxis} tick={{ fontSize: 11 }} />
+              <Tooltip
+                formatter={(value: number, name: string) => [nok(value), name]}
+                labelStyle={{ fontWeight: 600 }}
+              />
+              <Legend />
+              <Bar dataKey="Lån" stackId="a" fill="#ef4444" />
+              <Bar dataKey="Innskudd" stackId="a" fill="#3b82f6" />
+              <Bar dataKey="Rente" stackId="a" fill="#f97316" />
+              <Bar
+                dataKey="Nettovekst"
+                stackId="a"
+                fill="#22c55e"
+                radius={[4, 4, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Time-series chart */}
+      {history && history.length > 1 && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
+          <p className="text-sm font-semibold text-gray-700 mb-1">
+            Utvikling over tid
+          </p>
+          <p className="text-xs text-gray-400 mb-4">
+            Alle handledager — Lån, Innskudd inkl. rente og Markedsverdi
+          </p>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Line chart 1: Lån, Innskudd+rente, Markedsverdi */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">
+                Kapitalstruktur
+              </p>
+              <ResponsiveContainer width="100%" height={340}>
+                <LineChart
+                  data={history.map((p) => ({
+                    date: p.date,
+                    Markedsverdi: Math.round(p.market_value),
+                    "Innskudd+rente": Math.round(
+                      p.total_equity + p.total_interest_paid,
+                    ),
+                    Lån: Math.round(p.total_borrowed),
+                  }))}
+                  margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={fmtDateLabel}
+                    interval="preserveStartEnd"
+                    minTickGap={22}
+                  />
+                  <YAxis tickFormatter={fmtYAxis} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    labelFormatter={(label) => fmtDateLabel(String(label))}
+                    formatter={(value: number, name: string) => [
+                      nok(value),
+                      name,
+                    ]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line
+                    type="linear"
+                    dataKey="Markedsverdi"
+                    stroke="#22c55e"
+                    dot={false}
+                    strokeWidth={2}
+                  />
+                  <Line
+                    type="linear"
+                    dataKey="Innskudd+rente"
+                    stroke="#3b82f6"
+                    dot={false}
+                    strokeWidth={2}
+                  />
+                  <Line
+                    type="linear"
+                    dataKey="Lån"
+                    stroke="#ef4444"
+                    dot={false}
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Line chart 2: Net value = Markedsverdi - Lån - Innskudd - Rente */}
+            <div>
+              <p className="text-xs font-medium text-gray-500 mb-2">
+                Nettovekst = Markedsverdi − Lån − Innskudd − Rente
+              </p>
+              <ResponsiveContainer width="100%" height={340}>
+                <LineChart
+                  data={history.map((p) => ({
+                    date: p.date,
+                    Nettovekst: Math.round(p.net_value),
+                  }))}
+                  margin={{ top: 5, right: 20, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={fmtDateLabel}
+                    interval="preserveStartEnd"
+                    minTickGap={22}
+                  />
+                  <YAxis tickFormatter={fmtYAxis} tick={{ fontSize: 10 }} />
+                  <Tooltip
+                    labelFormatter={(label) => fmtDateLabel(String(label))}
+                    formatter={(value: number, name: string) => [
+                      nok(value),
+                      name,
+                    ]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line
+                    type="linear"
+                    dataKey="Nettovekst"
+                    stroke="#8b5cf6"
+                    dot={false}
+                    strokeWidth={2}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
 
       <SectionHeader title="Fond" description="Klikk på et fond for detaljer" />
 

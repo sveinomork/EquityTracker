@@ -64,7 +64,7 @@ def test_fund_summary_and_lots_include_analytics(client) -> None:
         "/api/v1/transactions",
         json={
             "fund_id": fund_id,
-            "date": "2024-01-01",
+            "date": "2000-01-01",
             "type": "BUY",
             "units": 100,
             "price_per_unit": 100,
@@ -130,11 +130,14 @@ def test_fund_summary_and_lots_include_analytics(client) -> None:
     summary = summary_response.json()
 
     assert summary["fund_name"] == "Fondsfinans High Yield"
-    assert summary["capital_split"]["total_cost"] == 10000.0
-    assert summary["capital_split"]["total_equity"] == 6000.0
-    assert summary["capital_split"]["total_borrowed"] == 4000.0
+    assert summary["capital_split"]["total_cost"] == pytest.approx(8039.21568627451, abs=1e-6)
+    assert summary["capital_split"]["total_equity"] == pytest.approx(4823.529411764706, abs=1e-6)
+    assert summary["capital_split"]["total_borrowed"] == pytest.approx(3215.686274509804, abs=1e-6)
     assert summary["current_value"] == 8528.0
     assert summary["total_dividend_reinvested"] == 202.0
+    assert summary["realized_profit_from_sold_positions"] == pytest.approx(79.21568627451, abs=1e-6)
+    assert summary["profit_loss_gross"] == pytest.approx(488.78431372549, abs=1e-6)
+    assert summary["profit_loss_gross_including_realized"] == pytest.approx(366.0, abs=1e-6)
     assert summary["performance_windows"]["14d_pct"] is None
     assert summary["performance_windows"]["30d_pct"] > 0
     assert summary["returns"]["return_on_equity_net_pct"] is not None
@@ -155,27 +158,69 @@ def test_fund_summary_and_lots_include_analytics(client) -> None:
     assert len(portfolio["funds"]) == 1
 
 
-def test_sell_without_lot_id_is_rejected(client) -> None:
+def test_sell_without_lot_id_is_fifo_allocated(client) -> None:
     fund_response = client.post(
         "/api/v1/funds",
         json={"name": "Fund A", "ticker": "FNA"},
     )
     fund_id = fund_response.json()["id"]
 
+    buy_lot_1 = client.post(
+        "/api/v1/transactions",
+        json={
+            "fund_id": fund_id,
+            "date": "2024-01-01",
+            "type": "BUY",
+            "units": 10,
+            "price_per_unit": 100,
+            "total_amount": 1000,
+            "borrowed_amount": 0,
+        },
+    )
+    assert buy_lot_1.status_code == 201
+    lot_1_id = buy_lot_1.json()["id"]
+
+    buy_lot_2 = client.post(
+        "/api/v1/transactions",
+        json={
+            "fund_id": fund_id,
+            "date": "2024-01-02",
+            "type": "BUY",
+            "units": 10,
+            "price_per_unit": 110,
+            "total_amount": 1100,
+            "borrowed_amount": 0,
+        },
+    )
+    assert buy_lot_2.status_code == 201
+    lot_2_id = buy_lot_2.json()["id"]
+
     response = client.post(
         "/api/v1/transactions",
         json={
             "fund_id": fund_id,
-            "date": str(date(2024, 1, 1)),
+            "date": str(date(2024, 1, 3)),
             "type": "SELL",
-            "units": 2,
-            "price_per_unit": 100,
-            "total_amount": 200,
+            "units": 12,
+            "price_per_unit": 105,
+            "total_amount": 1260,
             "borrowed_amount": 0,
         },
     )
 
-    assert response.status_code == 422
+    assert response.status_code == 201
+
+    list_response = client.get("/api/v1/transactions", params={"fund_id": fund_id})
+    assert list_response.status_code == 200
+    payload = list_response.json()
+
+    sells = [item for item in payload if item["type"] == "SELL"]
+    assert len(sells) == 2
+    assert sells[0]["lot_id"] == lot_1_id
+    assert sells[1]["lot_id"] == lot_2_id
+    assert sells[0]["units"] == pytest.approx(-10.0, abs=0.0001)
+    assert sells[1]["units"] == pytest.approx(-2.0, abs=0.0001)
+    assert (sells[0]["total_amount"] + sells[1]["total_amount"]) == pytest.approx(1260.0, abs=0.01)
 
 
 def test_distributing_fund_total_period_metrics_use_consistent_formula(client) -> None:
@@ -607,3 +652,55 @@ def test_d1_uses_latest_available_price_day_when_as_of_is_stale(client) -> None:
     assert d1["start_date"] == "2026-04-29"
     assert d1["brutto_value_change_nok"] == pytest.approx(100.0, abs=0.01)
     assert d1["return_split"]["gross_pct"] == pytest.approx((100.0 / 10900.0) * 100.0, abs=0.01)
+
+
+def test_d7_uses_latest_available_price_day_when_as_of_is_stale(client) -> None:
+    fund_response = client.post(
+        "/api/v1/funds",
+        json={"name": "Stale Price Window Fund", "ticker": "SPW"},
+    )
+    fund_id = fund_response.json()["id"]
+
+    buy_response = client.post(
+        "/api/v1/transactions",
+        json={
+            "fund_id": fund_id,
+            "date": "2026-04-20",
+            "type": "BUY",
+            "units": 100,
+            "price_per_unit": 100,
+            "total_amount": 10000,
+            "borrowed_amount": 0,
+        },
+    )
+    assert buy_response.status_code == 201
+
+    prices_response = client.post(
+        f"/api/v1/funds/{fund_id}/prices",
+        json={
+            "items": [
+                {"date": "2026-04-27", "price": 109.63104},
+                {"date": "2026-05-05", "price": 110.03269},
+            ]
+        },
+    )
+    assert prices_response.status_code == 201
+
+    summary_response = client.get(
+        f"/api/v1/funds/{fund_id}/summary",
+        params={"as_of_date": "2026-05-20"},
+    )
+    assert summary_response.status_code == 200
+    d7 = summary_response.json()["period_metrics"]["7d"]
+
+    # With stale as_of_date, 7d should still anchor to latest price date (2026-05-05),
+    # so start_date becomes 2026-04-28 and falls back to 2026-04-27 for start price.
+    expected_gross = (110.03269 - 109.63104) * 100.0
+    expected_base = 109.63104 * 100.0
+
+    assert d7["end_date"] == "2026-05-05"
+    assert d7["start_date"] == "2026-04-28"
+    assert d7["brutto_value_change_nok"] == pytest.approx(expected_gross, abs=0.01)
+    assert d7["return_split"]["gross_pct"] == pytest.approx((expected_gross / expected_base) * 100.0, abs=0.01)
+
+

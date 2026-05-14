@@ -16,6 +16,7 @@ LOAN_TICKERS = ("FHY", "HHR", "HHRP", "KNB", "KHD")
 
 @dataclass(frozen=True)
 class SeedRate:
+    """Seed entry describing one effective loan rate."""
     effective_date: date
     nominal_rate: Decimal
 
@@ -28,6 +29,7 @@ SEED_RATES: list[SeedRate] = [
 
 
 def main() -> None:
+    """Upsert predefined loan rates for selected funds."""
     create_db_and_tables()
 
     with SessionLocal() as session:

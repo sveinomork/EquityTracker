@@ -86,7 +86,7 @@ export default function FundDetailPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         <StatCard title="Markedsverdi" value={nok(summary.current_value)} />
         <StatCard
           title="Kostpris total"
@@ -95,6 +95,15 @@ export default function FundDetailPage() {
         <StatCard
           title="Betalt rente"
           value={nok(summary.total_interest_paid)}
+        />
+        <StatCard
+          title="Realisert gevinst (solgt)"
+          value={nok(summary.realized_profit_from_sold_positions)}
+          highlight={
+            summary.realized_profit_from_sold_positions >= 0
+              ? "positive"
+              : "negative"
+          }
         />
         <StatCard
           title="True Net Worth"
@@ -268,6 +277,11 @@ export default function FundDetailPage() {
                   />
                   <ThWithTooltip
                     className="px-4 py-3 text-right font-semibold text-gray-700"
+                    label="Avkastning inkl kredittkostnader"
+                    tip="Nåverdi minus kostpris og akkumulert rentekostnad for loten."
+                  />
+                  <ThWithTooltip
+                    className="px-4 py-3 text-right font-semibold text-gray-700"
                     label="Avkastning mot kostpris (%)"
                     tip="(Nåverdi - kostpris) / kostpris, i prosent."
                   />
@@ -288,6 +302,10 @@ export default function FundDetailPage() {
                   <tr key={lot.lot_id} className="border-b hover:bg-gray-50">
                     {(() => {
                       const lotCost = lot.capital_split.cost;
+                      const returnIncludingCreditCosts =
+                        lot.current_value -
+                        lotCost -
+                        lot.allocated_interest_paid;
                       const returnOnCostPct =
                         lotCost > 0
                           ? ((lot.current_value - lotCost) / lotCost) * 100
@@ -338,6 +356,9 @@ export default function FundDetailPage() {
                           </td>
                           <td className="px-4 py-3 text-right">
                             {nok(lot.current_value - lot.capital_split.cost)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            {nok(returnIncludingCreditCosts)}
                           </td>
                           <td className="px-4 py-3 text-right">
                             <PnlBadge value={returnOnCostPct} />

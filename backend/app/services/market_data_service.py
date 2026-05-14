@@ -12,12 +12,14 @@ from app.schemas.rate import LoanRateBatchCreate
 
 
 class MarketDataService:
+    """Business operations for price and rate market data."""
     def __init__(
         self,
         fund_repository: FundRepository,
         price_repository: PriceRepository,
         rate_repository: RateRepository,
     ) -> None:
+        """Initialize the service with fund, price, and rate repositories."""
         self.fund_repository = fund_repository
         self.price_repository = price_repository
         self.rate_repository = rate_repository
@@ -25,6 +27,7 @@ class MarketDataService:
     def add_prices(
         self, fund_id: uuid.UUID, payload: DailyFundPriceBatchCreate
     ) -> list[DailyFundPrice]:
+        """Create or update daily prices for a fund."""
         if self.fund_repository.get(fund_id) is None:
             raise NotFoundError("Fund not found")
 
@@ -37,6 +40,7 @@ class MarketDataService:
         return stored
 
     def add_rates(self, fund_id: uuid.UUID, payload: LoanRateBatchCreate) -> list[LoanRateHistory]:
+        """Create or update loan rates for a fund."""
         if self.fund_repository.get(fund_id) is None:
             raise NotFoundError("Fund not found")
 
@@ -59,6 +63,7 @@ class MarketDataService:
         to_date: date | None = None,
         limit: int | None = None,
     ) -> list[DailyFundPrice]:
+        """List prices for a fund using optional date filters."""
         if self.fund_repository.get(fund_id) is None:
             raise NotFoundError("Fund not found")
 
@@ -73,6 +78,7 @@ class MarketDataService:
         to_date: date | None = None,
         limit: int | None = None,
     ) -> list[LoanRateHistory]:
+        """List rates for a fund using optional date filters."""
         if self.fund_repository.get(fund_id) is None:
             raise NotFoundError("Fund not found")
 

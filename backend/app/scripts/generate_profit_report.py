@@ -23,26 +23,31 @@ TICKERS = list(CANONICAL_BY_TICKER.keys())
 
 
 def _nok(value: Decimal) -> str:
+    """Format a numeric value as NOK with no decimal places."""
     return f"{value:,.0f} kr"
 
 
 def _pct(value: Decimal | None) -> str:
+    """Format an optional percentage value for report output."""
     if value is None:
         return "  N/A"
     return f"{value:+.2f}%"
 
 
 def _row(label: str, *cols: str) -> str:
+    """Build one aligned report row with label and columns."""
     first = f"  {label:<28}"
     rest = "".join(f"{c:>{COL_WIDTH}}" for c in cols)
     return first + rest
 
 
 def _divider(n_cols: int) -> str:
+    """Return a horizontal divider sized for current column count."""
     return "-" * (30 + COL_WIDTH * n_cols)
 
 
 def main() -> None:
+    """Generate and print a portfolio profit report to stdout."""
     create_db_and_tables()
     as_of = date.today()
 

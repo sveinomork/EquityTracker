@@ -18,20 +18,24 @@ SessionDependency = Annotated[Session, Depends(get_db_session)]
 
 
 def get_fund_service(session: SessionDependency) -> FundService:
+    """Provide a fund service instance for request handling."""
     return FundService(FundRepository(session))
 
 
 def get_transaction_service(session: SessionDependency) -> TransactionService:
+    """Provide a transaction service instance for request handling."""
     return TransactionService(FundRepository(session), TransactionRepository(session))
 
 
 def get_market_data_service(session: SessionDependency) -> MarketDataService:
+    """Provide a market data service instance for request handling."""
     return MarketDataService(
         FundRepository(session), PriceRepository(session), RateRepository(session)
     )
 
 
 def get_portfolio_analytics_service(session: SessionDependency) -> PortfolioAnalyticsService:
+    """Provide a portfolio analytics service instance for request handling."""
     return PortfolioAnalyticsService(
         FundRepository(session),
         TransactionRepository(session),

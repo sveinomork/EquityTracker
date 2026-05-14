@@ -24,6 +24,7 @@ from app.schemas.analytics import (
     PeriodMetrics,
     PeriodMetricsByWindow,
     PerformanceWindows,
+    PortfolioHistoryPoint,
     PortfolioSummary,
     PortfolioTotals,
     ReturnSplitMetrics,
@@ -46,6 +47,7 @@ DISTRIBUTING_FUNDS = {"FHY", "HHR", "HHRP"}
 
 @dataclass(slots=True)
 class LotComputation:
+    """Computed runtime values for one BUY lot."""
     lot: Transaction
     related_transactions: list[Transaction]
     current_units: Decimal
@@ -58,6 +60,7 @@ class LotComputation:
 
 @dataclass(slots=True)
 class TrueNetWorthComputation:
+    """Intermediate totals used to build true-net-worth outputs."""
     total_invested_capital: Decimal
     total_market_value: Decimal
     total_allocated_debt: Decimal
@@ -69,7 +72,19 @@ class TrueNetWorthComputation:
     true_net_worth_nok: Decimal
 
 
+@dataclass(slots=True)
+class LotCapitalState:
+    """Remaining and realized principal state for one lot."""
+    remaining_units: Decimal
+    remaining_cost: Decimal
+    remaining_equity: Decimal
+    remaining_borrowed: Decimal
+    sold_cost: Decimal
+    sale_proceeds: Decimal
+
+
 class PortfolioAnalyticsService:
+    """Analytics service for fund and portfolio performance calculations."""
     def __init__(
         self,
         fund_repository: FundRepository,
@@ -78,6 +93,7 @@ class PortfolioAnalyticsService:
         rate_repository: RateRepository,
         interest_service: InterestService,
     ) -> None:
+        """Initialize analytics dependencies for repositories and interest logic."""
         self.fund_repository = fund_repository
         self.transaction_repository = transaction_repository
         self.price_repository = price_repository
@@ -85,6 +101,9 @@ class PortfolioAnalyticsService:
         self.interest_service = interest_service
 
     def get_fund_summary(self, fund_id: uuid.UUID, as_of_date: date | None = None) -> FundSummary:
+        """Build a full analytics summary for one fund."""
+        # Returns a complete analytics summary for a single fund including capital split,
+        # current value, profit/loss, returns, borrowing costs, period metrics, tax, and true net worth.
         fund = self.fund_repository.get(fund_id)
         if fund is None:
             raise NotFoundError("Fund not found")
@@ -98,18 +117,23 @@ class PortfolioAnalyticsService:
         rates = self.rate_repository.list_for_fund(fund_id)
 
         lots = self._compute_lots(transactions, rates, latest_price_value, effective_date)
-        buy_transactions = [
-            transaction for transaction in transactions if transaction.type is TransactionType.BUY
-        ]
-        total_cost = sum(
-            (Decimal(item.total_amount) for item in buy_transactions), start=DECIMAL_ZERO
-        )
-        total_equity = sum(
-            (Decimal(item.equity_amount) for item in buy_transactions), start=DECIMAL_ZERO
-        )
-        total_borrowed = sum(
-            (Decimal(item.borrowed_amount) for item in buy_transactions), start=DECIMAL_ZERO
-        )
+        total_cost = DECIMAL_ZERO
+        total_equity = DECIMAL_ZERO
+        total_borrowed = DECIMAL_ZERO
+        weighted_days_sum = DECIMAL_ZERO
+        for lot in lots:
+            capital_state = self._lot_capital_state_as_of(
+                buy_transaction=lot.lot,
+                related_transactions=lot.related_transactions,
+                as_of_date=effective_date,
+            )
+            effective_cost = capital_state.remaining_cost
+            effective_equity = capital_state.remaining_equity
+            effective_borrowed = capital_state.remaining_borrowed
+            total_cost += effective_cost
+            total_equity += effective_equity
+            total_borrowed += effective_borrowed
+            weighted_days_sum += effective_cost * Decimal(max((effective_date - lot.lot.date).days, 1))
         total_dividend_reinvested = sum(
             (
                 Decimal(item.total_amount)
@@ -127,9 +151,17 @@ class PortfolioAnalyticsService:
         current_annual_cost = sum((item.current_annual_cost for item in lots), start=DECIMAL_ZERO)
         net_equity_value = current_value - outstanding_borrowed
         profit_loss_gross = current_value - total_cost
+        realized_profit_from_sold_positions, total_sale_proceeds, _ = (
+            self._realized_profit_from_sold_positions(transactions, rates)
+        )
+        profit_loss_gross_including_realized = (
+            profit_loss_gross + realized_profit_from_sold_positions
+        )
         profit_loss_net = net_equity_value - total_equity - total_interest_paid
         effective_equity_contribution = total_equity + total_interest_paid
-        average_days_owned = self._average_days_owned(buy_transactions, total_cost, effective_date)
+        average_days_owned = (
+            weighted_days_sum / total_cost if total_cost > DECIMAL_ZERO else DECIMAL_ZERO
+        )
         annualized_return_on_cost_weighted = self._weighted_annualized_return_on_cost(
             transactions,
             lots,
@@ -169,8 +201,10 @@ class PortfolioAnalyticsService:
             net_equity_value=net_equity_value,
             total_dividend_reinvested=total_dividend_reinvested,
             total_interest_paid=total_interest_paid,
+            realized_profit_from_sold_positions=realized_profit_from_sold_positions,
             average_days_owned=average_days_owned,
             profit_loss_gross=profit_loss_gross,
+            profit_loss_gross_including_realized=profit_loss_gross_including_realized,
             profit_loss_net=profit_loss_net,
             returns=ReturnMetrics(
                 return_on_total_assets_pct=self._safe_percentage(profit_loss_gross, total_cost),
@@ -200,7 +234,7 @@ class PortfolioAnalyticsService:
                 regime=self._resolve_tax_regime(fund, effective_date),
                 taxable_gain_base_nok=self._taxable_gain_base(
                     fund,
-                    current_value - total_cost,
+                    profit_loss_gross,
                 ),
                 deferred_tax_nok=true_net_worth.total_deferred_tax_accumulating,
                 paid_dividend_tax_nok=true_net_worth.total_paid_tax_distributing,
@@ -224,6 +258,9 @@ class PortfolioAnalyticsService:
         fund_id: uuid.UUID,
         as_of_date: date | None = None,
     ) -> FundLotsSummary:
+        """Build lot-level analytics summary for one fund."""
+        # Returns a per-lot breakdown for a fund showing each individual purchase lot's
+        # current units, value, cost basis, interest, profit/loss, and period metrics.
         fund = self.fund_repository.get(fund_id)
         if fund is None:
             raise NotFoundError("Fund not found")
@@ -240,11 +277,20 @@ class PortfolioAnalyticsService:
         payload_lots: list[LotSummary] = []
         for item in lots:
             original_units = Decimal(item.lot.units)
-            lot_equity_contribution = Decimal(item.lot.equity_amount) + item.allocated_interest_paid
+            capital_state = self._lot_capital_state_as_of(
+                buy_transaction=item.lot,
+                related_transactions=item.related_transactions,
+                as_of_date=effective_date,
+            )
+            effective_cost = capital_state.remaining_cost
+            effective_equity = capital_state.remaining_equity
+            effective_borrowed = capital_state.remaining_borrowed
+
+            lot_equity_contribution = effective_equity + item.allocated_interest_paid
             profit_loss_net = (
                 item.current_value
                 - item.outstanding_borrowed
-                - Decimal(item.lot.equity_amount)
+                - effective_equity
                 - item.allocated_interest_paid
             )
             days_owned = max((effective_date - item.lot.date).days, 1)
@@ -257,9 +303,9 @@ class PortfolioAnalyticsService:
                     current_units=item.current_units,
                     purchase_price_per_unit=Decimal(item.lot.price_per_unit),
                     capital_split=LotCapitalSplit(
-                        cost=Decimal(item.lot.total_amount),
-                        equity=Decimal(item.lot.equity_amount),
-                        borrowed=Decimal(item.lot.borrowed_amount),
+                        cost=effective_cost,
+                        equity=effective_equity,
+                        borrowed=effective_borrowed,
                     ),
                     current_value=item.current_value,
                     allocated_interest_paid=item.allocated_interest_paid,
@@ -295,6 +341,9 @@ class PortfolioAnalyticsService:
         )
 
     def get_portfolio_summary(self, as_of_date: date | None = None) -> PortfolioSummary:
+        """Build a combined summary across all funds in the portfolio."""
+        # Aggregates all fund summaries into a portfolio-level overview with combined totals
+        # and period metrics across all funds.
         effective_date = as_of_date or date.today()
         funds = self.fund_repository.list_all()
         fund_summaries = [self.get_fund_summary(fund.id, effective_date) for fund in funds]
@@ -337,11 +386,122 @@ class PortfolioAnalyticsService:
             period_metrics=portfolio_period_metrics,
         )
 
+    def get_portfolio_history(self, as_of_date: date | None = None) -> list[PortfolioHistoryPoint]:
+        """Build portfolio history snapshots for all trading days up to a date."""
+        # Returns snapshots for all available trading days (price dates)
+        # up to as_of_date, showing market value, equity, debt, and net value over time.
+
+        effective_date = as_of_date or date.today()
+        funds = self.fund_repository.list_all()
+
+        # Pre-fetch all data per fund
+        fund_data = []
+        for fund in funds:
+            transactions = self.transaction_repository.list_for_fund(fund.id)
+            if not transactions:
+                continue
+            buy_txns = [t for t in transactions if t.type is TransactionType.BUY]
+            if not buy_txns:
+                continue
+            rates = self.rate_repository.list_for_fund(fund.id)
+            prices = sorted(
+                self.price_repository.list_for_fund(fund.id, to_date=effective_date),
+                key=lambda item: item.date,
+            )
+            fund_data.append((fund, transactions, rates, prices))
+
+        if not fund_data:
+            return []
+
+        first_date = min(t.date for _, txns, _, _ in fund_data for t in txns)
+
+        # Build snapshots on every available trading day across all funds.
+        snapshot_dates = sorted(
+            {
+                price.date
+                for _, _, _, prices in fund_data
+                for price in prices
+                if first_date <= price.date <= effective_date
+            }
+        )
+
+        if not snapshot_dates:
+            return []
+
+        points: list[PortfolioHistoryPoint] = []
+        for snap_date in snapshot_dates:
+            total_equity = DECIMAL_ZERO
+            total_borrowed = DECIMAL_ZERO
+            total_interest = DECIMAL_ZERO
+            total_market_value = DECIMAL_ZERO
+
+            for _fund, transactions, rates, prices in fund_data:
+                buy_lots = [
+                    t
+                    for t in transactions
+                    if t.type is TransactionType.BUY
+                    and self._transaction_effective_date_for_history(_fund, t, prices) <= snap_date
+                ]
+                if not buy_lots:
+                    continue
+
+                for buy_txn in buy_lots:
+                    related = [
+                        t for t in transactions
+                        if t.lot_id == buy_txn.id
+                        and self._transaction_effective_date_for_history(_fund, t, prices) <= snap_date
+                    ]
+                    interest = self.interest_service.calculate_for_lot(
+                        buy_txn, related, rates, snap_date
+                    )
+                    remaining_fraction = self._remaining_buy_fraction_as_of(
+                        buy_transaction=buy_txn,
+                        related_transactions=related,
+                    )
+                    total_interest += interest.total_paid
+                    total_borrowed += interest.current_outstanding_borrowed
+                    total_equity += Decimal(buy_txn.equity_amount) * remaining_fraction
+
+                # Units at snap_date
+                units = DECIMAL_ZERO
+                for t in transactions:
+                    if self._transaction_effective_date_for_history(_fund, t, prices) > snap_date:
+                        continue
+                    if t.type in (TransactionType.BUY, TransactionType.DIVIDEND_REINVEST):
+                        units += Decimal(t.units)
+                    elif t.type is TransactionType.SELL:
+                        # SELL units may be stored as negative; use abs() so we always subtract
+                        units -= abs(Decimal(t.units))
+
+                # Use implied post-dividend price when reinvests occur on the snap_date
+                # but no official price exists for that date (e.g. FHY on 2024-12-31).
+                # This prevents using a stale pre-dividend price with post-dividend unit counts.
+                price = self._effective_price_for_history(prices, transactions, snap_date)
+
+                total_market_value += units * price
+
+            net_value = total_market_value - total_borrowed - total_equity - total_interest
+            points.append(
+                PortfolioHistoryPoint(
+                    date=snap_date,
+                    market_value=total_market_value,
+                    total_equity=total_equity,
+                    total_borrowed=total_borrowed,
+                    total_interest_paid=total_interest,
+                    net_value=net_value,
+                )
+            )
+
+        return points
+
     def get_fund_period_reconciliation(
         self,
         ticker: str = "FHY",
         as_of_date: date | None = None,
     ) -> FundPeriodReconciliation:
+        """Build period reconciliation rows for one fund ticker."""
+        # Returns a detailed period-by-period reconciliation table for a fund identified by ticker,
+        # showing prices, units, value changes, dividends, interest, and tax for each period window.
         fund = self.fund_repository.get_by_ticker(ticker)
         if fund is None:
             raise NotFoundError("Fund not found")
@@ -379,6 +539,9 @@ class PortfolioAnalyticsService:
         latest_price_value: Decimal,
         as_of_date: date,
     ) -> list[LotComputation]:
+        """Compute current state metrics for each BUY lot."""
+        # Computes the current state for each BUY lot: remaining units, current market value,
+        # outstanding borrowed amount, total interest paid, and current monthly/annual cost.
         buy_lots = [
             transaction for transaction in transactions if transaction.type is TransactionType.BUY
         ]
@@ -414,6 +577,9 @@ class PortfolioAnalyticsService:
         latest_price_value: Decimal,
         as_of_date: date,
     ) -> PeriodMetricsByWindow:
+        """Build period metrics for a single lot across all windows."""
+        # Builds return metrics for all standard period windows (d1, d7, d30, d180, ytd, m12, m24, total)
+        # for a single lot, including gross change, interest cost, tax credit, and net margins.
         metrics: dict[str, PeriodMetrics] = {}
         for key in PERIOD_KEYS:
             start_date = self._period_start_for_key(key, as_of_date)
@@ -501,6 +667,9 @@ class PortfolioAnalyticsService:
         latest_price_date: date,
         as_of_date: date,
     ) -> PeriodMetricsByWindow:
+        """Build fund-level period metrics based on reconciliation rows."""
+        # Builds period return metrics for an entire fund by delegating to reconciliation rows
+        # and mapping each row into a PeriodMetrics object.
         rows = self._build_fund_period_reconciliation_rows(
             fund=fund,
             transactions=transactions,
@@ -555,6 +724,9 @@ class PortfolioAnalyticsService:
         latest_price_date: date,
         as_of_date: date,
     ) -> list[FundPeriodReconciliationRow]:
+        """Build reconciliation rows for each configured period window."""
+        # Builds one reconciliation row per period key containing start/end prices, units, value change,
+        # net cashflow, dividends, interest, tax, and return percentage for the fund.
         earliest_buy = self._first_buy_date(transactions) or as_of_date
         total_cost = sum(
             (
@@ -564,9 +736,10 @@ class PortfolioAnalyticsService:
             ),
             start=DECIMAL_ZERO,
         )
+        rolling_period_end = min(as_of_date, latest_price_date)
         rows: list[FundPeriodReconciliationRow] = []
         for key in PERIOD_KEYS:
-            period_end = latest_price_date if key == "d1" else as_of_date
+            period_end = as_of_date if key == "total" else rolling_period_end
             start_date = self._period_start_for_key(key, period_end)
             effective_start = earliest_buy if key == "total" else start_date
             if effective_start > period_end:
@@ -598,7 +771,18 @@ class PortfolioAnalyticsService:
                 period_end,
             )
             if key == "total":
-                gross_value_change = value_t1 - value_t0
+                # For the total period, value_t0 = total_cost (all BUY amounts).
+                # Sold lots contribute 0 to value_t1 but their cost is in value_t0.
+                # Add sale proceeds back so gross_value_change = (remaining_value + proceeds) - cost.
+                total_sell_proceeds = sum(
+                    (
+                        abs(Decimal(t.total_amount))
+                        for t in transactions
+                        if t.type is TransactionType.SELL
+                    ),
+                    start=DECIMAL_ZERO,
+                )
+                gross_value_change = value_t1 + total_sell_proceeds - value_t0
                 period_capital_base = value_t0
             else:
                 gross_value_change = (value_t1 - value_t0) - net_external_cashflow
@@ -676,6 +860,9 @@ class PortfolioAnalyticsService:
         fund_summaries: list[FundSummary],
         as_of_date: date,
     ) -> PeriodMetricsByWindow:
+        """Aggregate period metrics from all fund summaries."""
+        # Aggregates individual fund period metrics into combined portfolio-level period metrics
+        # by summing value changes, interest, tax, and recalculating return percentages.
         metrics: dict[str, PeriodMetrics] = {}
         for key in PERIOD_KEYS:
             period_entries = [getattr(item.period_metrics, key) for item in fund_summaries]
@@ -752,6 +939,9 @@ class PortfolioAnalyticsService:
         total_interest_paid: Decimal,
         as_of_date: date,
     ) -> TrueNetWorthComputation:
+        """Compute true net worth components for one fund."""
+        # Computes the true net worth for a single fund by subtracting debt, deferred or paid tax,
+        # and net interest cost (after the 22% tax credit) from current market value.
         unrealized_gain_before_tax = current_value - total_cost
         tax_credit = total_interest_paid * DECIMAL_22_PCT
         regime = self._resolve_tax_regime(fund, as_of_date)
@@ -792,6 +982,8 @@ class PortfolioAnalyticsService:
         self,
         fund_summaries: list[FundSummary],
     ) -> TrueNetWorthBreakdown:
+        """Aggregate true net worth components across all funds."""
+        # Sums all per-fund true net worth components into a single portfolio-level breakdown.
         return TrueNetWorthBreakdown(
             total_invested_capital=sum(
                 (item.true_net_worth.total_invested_capital for item in fund_summaries),
@@ -832,16 +1024,25 @@ class PortfolioAnalyticsService:
         )
 
     def _resolve_tax_regime(self, fund: Fund, value_date: date) -> str:
+        """Resolve tax regime name for a fund and date."""
+        # Returns the applicable tax regime string for a fund: "distributing_pre_2026" for
+        # distributing funds, otherwise "accumulating_2026".
         if fund.ticker in DISTRIBUTING_FUNDS:
             return "distributing_pre_2026"
         return "accumulating_2026"
 
     def _taxable_gain_base(self, fund: Fund, unrealized_gain_before_tax: Decimal) -> Decimal:
+        """Determine taxable gain base with optional manual override."""
+        # Returns the taxable gain base, using a manual override if configured on the fund,
+        # otherwise clamping the unrealized gain to zero as a floor.
         if fund.manual_taxable_gain_override is not None:
             return Decimal(fund.manual_taxable_gain_override)
         return max(unrealized_gain_before_tax, DECIMAL_ZERO)
 
     def _period_start_for_key(self, period_key: str, as_of_date: date) -> date:
+        """Map a period key to its computed start date."""
+        # Maps a period key (d1, d7, d30, d180, ytd, m12, m24, total) to its corresponding
+        # start date relative to as_of_date.
         if period_key == "d1":
             return as_of_date - timedelta(days=1)
         if period_key == "d7":
@@ -858,7 +1059,111 @@ class PortfolioAnalyticsService:
             return as_of_date - timedelta(days=730)
         return date.min
 
+    def _realized_profit_from_sold_positions(
+        self,
+        transactions: list[Transaction],
+        rates: list,
+    ) -> tuple[Decimal, Decimal, Decimal]:
+        """Returns (realized_profit_for_display, total_sale_proceeds, total_interest_on_sold).
+
+        realized_profit_for_display = sale_proceeds - sold_cost
+        sold_cost is allocated from BUY principal only (same basis as lot cost).
+        Sells consume BUY units first; reinvested units are treated as zero-principal
+        units in this BUY-principal view.
+
+        total_sale_proceeds is returned for use in the Total period gross_value_change.
+        total_interest_on_sold is returned for informational use.
+        """
+        buy_lots = {
+            item.id: item for item in transactions if item.type is TransactionType.BUY
+        }
+        realized_profit = DECIMAL_ZERO
+        total_sale_proceeds = DECIMAL_ZERO
+        total_interest_on_sold = DECIMAL_ZERO
+
+        for lot_id, lot in buy_lots.items():
+            all_related = [t for t in transactions if t.lot_id == lot_id]
+            has_sell = any(t.type is TransactionType.SELL for t in all_related)
+            if not has_sell:
+                continue
+
+            capital_state = self._lot_capital_state_as_of(
+                buy_transaction=lot,
+                related_transactions=all_related,
+            )
+            total_sale_proceeds += capital_state.sale_proceeds
+            realized_profit += capital_state.sale_proceeds - capital_state.sold_cost
+
+        return realized_profit, total_sale_proceeds, total_interest_on_sold
+
+    def _lot_capital_state_as_of(
+        self,
+        buy_transaction: Transaction,
+        related_transactions: list[Transaction],
+        as_of_date: date | None = None,
+    ) -> LotCapitalState:
+        """Return remaining and sold principal state for one lot.
+
+        The principal pool for a lot consists of BUY plus DIVIDEND_REINVEST amounts.
+        SELL transactions reduce that pool proportionally by outstanding principal units.
+        """
+        remaining_total_units = Decimal(buy_transaction.units)
+        remaining_cost = Decimal(buy_transaction.total_amount)
+        remaining_equity = Decimal(buy_transaction.equity_amount)
+        remaining_borrowed = Decimal(buy_transaction.borrowed_amount)
+        sold_cost = DECIMAL_ZERO
+        sale_proceeds = DECIMAL_ZERO
+
+        events = sorted(
+            related_transactions,
+            key=lambda item: (item.date, item.created_at),
+        )
+        for transaction in events:
+            if as_of_date is not None and transaction.date > as_of_date:
+                continue
+
+            if transaction.type is TransactionType.DIVIDEND_REINVEST:
+                reinvest_units = Decimal(transaction.units)
+                if reinvest_units <= DECIMAL_ZERO:
+                    continue
+                # Reinvested dividends increase unit count, but do not represent
+                # new contributed BUY principal in capital_split totals.
+                remaining_total_units += reinvest_units
+                continue
+
+            if transaction.type is not TransactionType.SELL:
+                continue
+
+            sold_units = abs(Decimal(transaction.units))
+            if sold_units <= DECIMAL_ZERO or remaining_total_units <= DECIMAL_ZERO:
+                sale_proceeds += abs(Decimal(transaction.total_amount))
+                continue
+
+            sold_against_principal = min(sold_units, remaining_total_units)
+            sold_ratio = sold_against_principal / remaining_total_units
+            allocated_cost = remaining_cost * sold_ratio
+            allocated_equity = remaining_equity * sold_ratio
+            allocated_borrowed = remaining_borrowed * sold_ratio
+
+            remaining_total_units -= sold_against_principal
+            remaining_cost -= allocated_cost
+            remaining_equity -= allocated_equity
+            remaining_borrowed -= allocated_borrowed
+            sold_cost += allocated_cost
+            sale_proceeds += abs(Decimal(transaction.total_amount))
+
+        return LotCapitalState(
+            remaining_units=max(remaining_total_units, DECIMAL_ZERO),
+            remaining_cost=max(remaining_cost, DECIMAL_ZERO),
+            remaining_equity=max(remaining_equity, DECIMAL_ZERO),
+            remaining_borrowed=max(remaining_borrowed, DECIMAL_ZERO),
+            sold_cost=sold_cost,
+            sale_proceeds=sale_proceeds,
+        )
+
     def _first_buy_date(self, transactions: list[Transaction]) -> date | None:
+        """Return the earliest BUY transaction date if present."""
+        # Returns the earliest BUY transaction date, or None if there are no buy transactions.
         buy_dates = [item.date for item in transactions if item.type is TransactionType.BUY]
         if not buy_dates:
             return None
@@ -870,6 +1175,9 @@ class PortfolioAnalyticsService:
         related_transactions: list[Transaction],
         value_date: date,
     ) -> Decimal:
+        """Return net units for one lot as of a date."""
+        # Returns the net unit count for a single lot as of value_date by applying all
+        # related transactions (sells, reinvestments) that occurred on or before that date.
         if value_date < lot.date:
             return DECIMAL_ZERO
         units = Decimal(lot.units)
@@ -878,7 +1186,31 @@ class PortfolioAnalyticsService:
                 units += Decimal(transaction.units)
         return units
 
+    def _remaining_buy_fraction_as_of(
+        self,
+        buy_transaction: Transaction,
+        related_transactions: list[Transaction],
+    ) -> Decimal:
+        """Return remaining fraction of original BUY units after sells."""
+        original_units = abs(Decimal(buy_transaction.units))
+        if original_units <= DECIMAL_ZERO:
+            return Decimal("1")
+
+        sold_units_total = sum(
+            (
+                abs(Decimal(item.units))
+                for item in related_transactions
+                if item.type is TransactionType.SELL
+            ),
+            start=DECIMAL_ZERO,
+        )
+        remaining_units = max(original_units - sold_units_total, DECIMAL_ZERO)
+        return remaining_units / original_units
+
     def _fund_units_as_of(self, transactions: list[Transaction], value_date: date) -> Decimal:
+        """Return total fund units held as of a date."""
+        # Returns the total net units held across all lots for a fund as of value_date,
+        # accounting for buys, sells, and dividend reinvestments per lot.
         units_by_lot: dict[uuid.UUID, Decimal] = {}
         lot_ids: set[uuid.UUID] = set()
         for transaction in transactions:
@@ -887,11 +1219,123 @@ class PortfolioAnalyticsService:
                 lot_ids.add(transaction.id)
 
         for transaction in transactions:
-            if transaction.lot_id in lot_ids and transaction.date <= value_date:
-                units_by_lot[transaction.lot_id] = units_by_lot.get(transaction.lot_id, DECIMAL_ZERO) + Decimal(
+            lot_id = transaction.lot_id
+            if lot_id is not None and lot_id in lot_ids and transaction.date <= value_date:
+                units_by_lot[lot_id] = units_by_lot.get(lot_id, DECIMAL_ZERO) + Decimal(
                     transaction.units
                 )
         return sum(units_by_lot.values(), start=DECIMAL_ZERO)
+
+    def _transaction_effective_date_for_history(
+        self,
+        fund: Fund,
+        transaction: Transaction,
+        prices: list,
+    ) -> date:
+        """Return effective transaction date used in history snapshots."""
+        # Dividend reinvestments should line up with the first post-dividend price drop,
+        # not the calendar year-end posting date, otherwise history snapshots spike.
+        if transaction.type is TransactionType.DIVIDEND_REINVEST:
+            return self._dividend_reinvest_effective_date_for_history(prices, transaction.date)
+        return transaction.date
+
+    def _dividend_reinvest_effective_date_for_history(
+        self,
+        prices: list,
+        transaction_date: date,
+    ) -> date:
+        """Return the first post-dividend trading day that reflects the reinvestment."""
+        previous_price = self._latest_price_value_as_of(prices, transaction_date)
+        if previous_price <= DECIMAL_ZERO:
+            return transaction_date
+
+        dividend_drop_threshold = Decimal("0.98")
+        post_dividend_prices = [price for price in prices if price.date > transaction_date][:15]
+        for price in post_dividend_prices:
+            current_price = Decimal(price.price)
+            if current_price <= previous_price * dividend_drop_threshold:
+                return price.date
+            previous_price = current_price
+
+        return transaction_date
+
+    def _first_trading_day_on_or_after(self, prices: list, start_date: date) -> date | None:
+        """Return first available trading day on or after a date."""
+        # Returns the first available price date on or after start_date from the price list.
+        for price in prices:
+            if price.date >= start_date:
+                return price.date
+        return None
+
+    def _effective_price_for_history(
+        self, prices: list, transactions: list, snap_date: date
+    ) -> Decimal:
+        """Resolve best available price for a history snapshot date."""
+        # Returns the best available price for a fund at a snapshot date.
+        # Priority order:
+        #  1. Official price on exactly snap_date.
+        #  2. Implied post-dividend NAV from DIVIDEND_REINVEST transactions on snap_date
+        #     (when no official price exists on that date, e.g. FHY 2024-12-31 and 2025-12-31).
+        #     Using a stale pre-dividend price with post-dividend unit counts would overstate value.
+        #  3. Implied NAV from BUY transactions on snap_date, only when no prior price exists at all
+        #     (e.g. HHRP first purchase on 2025-09-30 before any price data).
+        #  4. Latest official price on or before snap_date.
+        has_price_on_snap = any(p.date == snap_date for p in prices)
+
+        if not has_price_on_snap:
+            # Check for dividend reinvests — they carry the post-dividend NAV
+            reinvests = [
+                t
+                for t in transactions
+                if t.type is TransactionType.DIVIDEND_REINVEST
+                and t.date == snap_date
+                and Decimal(t.units) > DECIMAL_ZERO
+            ]
+            if reinvests:
+                total_amount = sum(Decimal(t.total_amount) for t in reinvests)
+                total_units = sum(Decimal(t.units) for t in reinvests)
+                if total_units > DECIMAL_ZERO:
+                    return total_amount / total_units
+
+            # No prior price at all — use BUY implied NAV (first purchase of a new fund)
+            latest = self._latest_price_value_as_of(prices, snap_date)
+            if latest == DECIMAL_ZERO:
+                implied_nav = self._latest_implied_nav_on_or_before(transactions, snap_date)
+                if implied_nav is not None:
+                    return implied_nav
+
+        return self._latest_price_value_as_of(prices, snap_date)
+
+    def _latest_implied_nav_on_or_before(
+        self,
+        transactions: list[Transaction],
+        value_date: date,
+    ) -> Decimal | None:
+        """Return implied NAV from the latest BUY/DIVIDEND_REINVEST day up to a date."""
+        candidates = [
+            item
+            for item in transactions
+            if item.date <= value_date
+            and item.type in (TransactionType.BUY, TransactionType.DIVIDEND_REINVEST)
+            and Decimal(item.units) > DECIMAL_ZERO
+        ]
+        if not candidates:
+            return None
+
+        latest_date = max(item.date for item in candidates)
+        same_day = [item for item in candidates if item.date == latest_date]
+        total_amount = sum((Decimal(item.total_amount) for item in same_day), start=DECIMAL_ZERO)
+        total_units = sum((Decimal(item.units) for item in same_day), start=DECIMAL_ZERO)
+        if total_units <= DECIMAL_ZERO:
+            return None
+        return total_amount / total_units
+
+    def _latest_price_value_as_of(self, prices: list, value_date: date) -> Decimal:
+        """Return latest known price value on or before a date."""
+        for price in reversed(prices):
+            if price.date <= value_date:
+                return Decimal(price.price)
+        return DECIMAL_ZERO
 
     def _sum_dividends_for_lot_between(
         self,
@@ -899,6 +1343,8 @@ class PortfolioAnalyticsService:
         start_date: date,
         end_date: date,
     ) -> Decimal:
+        """Sum dividend reinvest amounts for one lot in a date range."""
+        # Sums the total amount of DIVIDEND_REINVEST transactions for a lot within the given date range.
         return sum(
             (
                 Decimal(item.total_amount)
@@ -915,6 +1361,8 @@ class PortfolioAnalyticsService:
         start_date: date,
         end_date: date,
     ) -> Decimal:
+        """Sum dividend reinvest amounts for one fund in a date range."""
+        # Sums the total amount of DIVIDEND_REINVEST transactions for a fund within the given date range.
         return sum(
             (
                 Decimal(item.total_amount)
@@ -931,6 +1379,9 @@ class PortfolioAnalyticsService:
         start_date: date,
         end_date: date,
     ) -> Decimal:
+        """Compute net BUY minus SELL cashflow for a date range."""
+        # Returns the net external cashflow for a fund in the date range: total BUY amounts
+        # minus total SELL amounts for transactions strictly after start_date.
         return sum(
             (
                 Decimal(item.total_amount)
@@ -955,6 +1406,9 @@ class PortfolioAnalyticsService:
         fallback_latest_price: Decimal,
         transactions: list[Transaction] | None = None,
     ) -> Decimal:
+        """Resolve start price for period calculations with safe fallbacks."""
+        # Finds the best available price for a fund at the start of a period. Adjusts for
+        # post-dividend NAV drops and falls back to the first available price if none precedes the date.
         price_on_or_before = self.price_repository.latest_on_or_before(fund_id, start_date)
         if price_on_or_before is not None:
             # If dividends were reinvested between the found price date and the start_date,
@@ -983,6 +1437,9 @@ class PortfolioAnalyticsService:
         total_cost: Decimal,
         as_of_date: date,
     ) -> Decimal:
+        """Compute cost-weighted average holding days for BUY transactions."""
+        # Returns the cost-weighted average number of days that the invested capital
+        # has been held across all buy transactions.
         if total_cost <= DECIMAL_ZERO:
             return DECIMAL_ZERO
 
@@ -993,6 +1450,9 @@ class PortfolioAnalyticsService:
         return weighted_sum / total_cost
 
     def _safe_percentage(self, numerator: Decimal, denominator: Decimal) -> Decimal | None:
+        """Return percentage result or None when denominator is not positive."""
+        # Divides numerator by denominator and returns the result as a percentage,
+        # or None if the denominator is zero or negative.
         if denominator <= DECIMAL_ZERO:
             return None
         return (numerator / denominator) * DECIMAL_100
@@ -1003,6 +1463,9 @@ class PortfolioAnalyticsService:
         equity: Decimal,
         days_owned: Decimal,
     ) -> Decimal | None:
+        """Compute annualized return on equity for one position."""
+        # Computes the annualized return on equity using compound growth, returning None
+        # if equity, days, or net value is non-positive.
         if (
             equity <= DECIMAL_ZERO
             or days_owned <= DECIMAL_ZERO
@@ -1024,6 +1487,9 @@ class PortfolioAnalyticsService:
         start_value: Decimal,
         days_owned: Decimal,
     ) -> Decimal | None:
+        """Compute annualized return from start and end values over time."""
+        # Computes the annualized return given a start value, end value, and holding period in days,
+        # returning None for invalid inputs.
         if start_value <= DECIMAL_ZERO or days_owned <= DECIMAL_ZERO or end_value <= DECIMAL_ZERO:
             return None
 
@@ -1042,6 +1508,9 @@ class PortfolioAnalyticsService:
         period_capital_base: Decimal,
         days: int,
     ) -> ReturnSplitMetrics:
+        """Build gross and after-interest return split metrics."""
+        # Builds a ReturnSplitMetrics object with gross and after-interest return amounts,
+        # percentages, and annualized figures for a given period.
         after_interest_amount = gross_value_change - allocated_interest_cost
         days_owned = Decimal(max(days, 1))
 
@@ -1071,6 +1540,9 @@ class PortfolioAnalyticsService:
         lots: list[LotComputation],
         as_of_date: date,
     ) -> Decimal | None:
+        """Compute XIRR-based annualized return on invested cost."""
+        # Computes the XIRR-based annualized return on cost by building cashflows from
+        # all buy/sell transactions and the current portfolio terminal value.
         cashflows = self._build_return_on_cost_cashflows(transactions, lots, as_of_date)
         return self._xirr_percentage(cashflows)
 
@@ -1080,6 +1552,9 @@ class PortfolioAnalyticsService:
         lots: list[LotComputation],
         as_of_date: date,
     ) -> list[tuple[date, Decimal]]:
+        """Build cashflow tuples used for XIRR return calculations."""
+        # Builds the cashflow list for XIRR: negative amounts for buys, positive for sells,
+        # and the current market value as a terminal inflow on as_of_date.
         cashflows: list[tuple[date, Decimal]] = []
         for transaction in transactions:
             if transaction.date > as_of_date:
@@ -1095,6 +1570,9 @@ class PortfolioAnalyticsService:
         return cashflows
 
     def _xirr_percentage(self, cashflows: list[tuple[date, Decimal]]) -> Decimal | None:
+        """Solve and return XIRR percentage from dated cashflows."""
+        # Solves for the XIRR (extended internal rate of return) using a bisection method
+        # on the net present value equation, returning the result as a percentage.
         if not cashflows:
             return None
 
@@ -1107,6 +1585,7 @@ class PortfolioAnalyticsService:
         first_date = ordered[0][0]
 
         def npv(rate: float) -> float:
+            """Compute net present value for a candidate XIRR rate."""
             total = 0.0
             for flow_date, amount in ordered:
                 years = (flow_date - first_date).days / 365.0
@@ -1165,6 +1644,9 @@ class PortfolioAnalyticsService:
         as_of_date: date,
         _transactions: list[Transaction],
     ) -> PerformanceWindows:
+        """Build performance percentages for standard lookback windows."""
+        # Computes price-based return percentages for standard lookback windows (14d, 30d, 90d, 180d, 1y)
+        # by comparing the latest price to the reference price for each window.
         values: dict[str, Decimal | None] = {}
         latest_price = self.price_repository.latest_on_or_before_with_max_staleness(
             fund_id,

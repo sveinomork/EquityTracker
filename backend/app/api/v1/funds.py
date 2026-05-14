@@ -15,11 +15,13 @@ router = APIRouter(prefix="/funds", tags=["funds"])
 
 @router.post("", response_model=FundRead, status_code=status.HTTP_201_CREATED)
 def create_fund(payload: FundCreate, service: FundServiceDependency) -> FundRead:
+    """Create a new fund from the provided payload."""
     return FundRead.model_validate(service.create_fund(payload))
 
 
 @router.get("", response_model=list[FundRead])
 def list_funds(service: FundServiceDependency) -> list[FundRead]:
+    """Return all funds registered in the portfolio."""
     return [FundRead.model_validate(fund) for fund in service.list_funds()]
 
 
@@ -29,6 +31,7 @@ def update_fund_tax_config(
     payload: FundTaxConfigUpdate,
     service: FundServiceDependency,
 ) -> FundRead:
+    """Update tax configuration fields for a single fund."""
     return FundRead.model_validate(service.update_tax_config(fund_id, payload))
 
 
@@ -38,6 +41,7 @@ def get_fund_summary(
     service: PortfolioAnalyticsServiceDependency,
     as_of_date: AsOfDateQuery = None,
 ) -> FundSummary:
+    """Return summary metrics for a fund at a given date."""
     return service.get_fund_summary(fund_id, as_of_date)
 
 
@@ -47,4 +51,5 @@ def get_fund_lots(
     service: PortfolioAnalyticsServiceDependency,
     as_of_date: AsOfDateQuery = None,
 ) -> FundLotsSummary:
+    """Return lot-level position details for a fund."""
     return service.get_fund_lots_summary(fund_id, as_of_date)

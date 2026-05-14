@@ -16,5 +16,5 @@ def trigger_yahoo_sync(
     session: SessionDependency,
     start_date: StartDateQuery = None,
 ) -> list[SyncResult]:
-    """Fetch latest prices from Yahoo Finance for all known tickers and store in DB."""
+    """Sync Yahoo prices for all known tickers into the database."""
     return sync_yahoo_prices(session, start_date=start_date)

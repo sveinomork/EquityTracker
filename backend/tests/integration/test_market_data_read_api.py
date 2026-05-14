@@ -100,3 +100,41 @@ def test_list_transactions_with_optional_fund_filter(client) -> None:
     filtered_transactions = filtered_response.json()
     assert len(filtered_transactions) == 1
     assert filtered_transactions[0]["fund_id"] == first_fund_id
+
+
+def test_update_transaction(client) -> None:
+    fund_response = client.post(
+        "/api/v1/funds",
+        json={"name": "Editable Fund", "ticker": "EDF"},
+    )
+    fund_id = fund_response.json()["id"]
+
+    create_response = client.post(
+        "/api/v1/transactions",
+        json={
+            "fund_id": fund_id,
+            "date": "2026-01-01",
+            "type": "BUY",
+            "units": 10,
+            "price_per_unit": 100,
+            "total_amount": 1000,
+            "borrowed_amount": 200,
+        },
+    )
+    assert create_response.status_code == 201
+    transaction_id = create_response.json()["id"]
+
+    update_response = client.patch(
+        f"/api/v1/transactions/{transaction_id}",
+        json={
+            "units": 8,
+            "total_amount": 840,
+            "borrowed_amount": 100,
+        },
+    )
+    assert update_response.status_code == 200
+    payload = update_response.json()
+    assert payload["units"] == 8.0
+    assert payload["total_amount"] == 840.0
+    assert payload["borrowed_amount"] == 100.0
+    assert payload["equity_amount"] == 740.0

@@ -22,6 +22,7 @@ NAME_ALIASES: dict[str, tuple[str, str]] = {
 
 
 def canonicalize_fund(name: str, ticker_or_symbol: str) -> tuple[str, str]:
+    """Return canonical fund name and ticker from name or symbol input."""
     key = ticker_or_symbol.strip().upper()
 
     if key in CANONICAL_BY_SYMBOL:

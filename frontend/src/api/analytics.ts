@@ -3,6 +3,7 @@ import type {
   FundLotsSummary,
   FundPeriodReconciliation,
   FundSummary,
+  PortfolioHistoryPoint,
   PortfolioSummary,
 } from "../types/api";
 
@@ -11,6 +12,15 @@ export const fetchPortfolioSummary = (
 ): Promise<PortfolioSummary> =>
   client
     .get<PortfolioSummary>("/portfolio/summary", {
+      params: asOfDate ? { as_of_date: asOfDate } : undefined,
+    })
+    .then((r) => r.data);
+
+export const fetchPortfolioHistory = (
+  asOfDate?: string,
+): Promise<PortfolioHistoryPoint[]> =>
+  client
+    .get<PortfolioHistoryPoint[]>("/portfolio/history", {
       params: asOfDate ? { as_of_date: asOfDate } : undefined,
     })
     .then((r) => r.data);

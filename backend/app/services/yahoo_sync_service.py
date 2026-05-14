@@ -21,6 +21,7 @@ YAHOO_SYMBOLS: dict[str, str] = {
 
 @dataclass(frozen=True)
 class SyncResult:
+    """Outcome for one ticker processed during Yahoo sync."""
     ticker: str
     upserted: int
     error: str | None = None
