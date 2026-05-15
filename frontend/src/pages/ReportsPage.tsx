@@ -99,8 +99,8 @@ export default function ReportsPage() {
       let rightValue = 0;
 
       if (sortBy === "current_value") {
-        leftValue = left.summary.current_value;
-        rightValue = right.summary.current_value;
+        leftValue = left.end_value;
+        rightValue = right.end_value;
       } else if (sortBy === "profit_loss_net") {
         leftValue = left.summary.profit_loss_net;
         rightValue = right.summary.profit_loss_net;
@@ -112,8 +112,8 @@ export default function ReportsPage() {
           right.summary.period_metrics.Total.return_split.gross_pct ??
           Number.NEGATIVE_INFINITY;
       } else {
-        leftValue = left.units;
-        rightValue = right.units;
+        leftValue = left.end_units;
+        rightValue = right.end_units;
       }
 
       return sortDirection === "asc"
@@ -124,57 +124,27 @@ export default function ReportsPage() {
     return sorted;
   }, [fundFilter, report, sortBy, sortDirection]);
 
-  const comparison = useMemo(() => {
-    if (!report || !previousReport) {
-      return null;
-    }
-
-    return {
-      currentValueDelta:
-        report.portfolio.totals.current_value -
-        previousReport.portfolio.totals.current_value,
-      profitLossDelta:
-        report.portfolio.totals.profit_loss_net -
-        previousReport.portfolio.totals.profit_loss_net,
-      grossPctDelta:
-        (report.portfolio.period_metrics.Total.return_split.gross_pct ?? 0) -
-        (previousReport.portfolio.period_metrics.Total.return_split.gross_pct ??
-          0),
-      previousPeriodLabel: previousReport.period_value,
-    };
-  }, [report, previousReport]);
-
   const fundComparisonRows = useMemo(() => {
-    if (!report || !previousReport) {
+    if (!report) {
       return [];
     }
 
-    const previousByTicker = new Map(
-      previousReport.funds.map((item) => [item.ticker, item]),
-    );
-
+    // Calculate period delta for each fund (end - start within the same period)
     return report.funds.map((item) => {
-      const previous = previousByTicker.get(item.ticker);
       return {
         ticker: item.ticker,
         fund_name: item.fund_name,
-        current_value_delta:
-          item.summary.current_value - (previous?.summary.current_value ?? 0),
-        profit_loss_net_delta:
-          item.summary.profit_loss_net -
-          (previous?.summary.profit_loss_net ?? 0),
-        total_return_pct_delta:
-          (item.summary.period_metrics.Total.return_split.gross_pct ?? 0) -
-          (previous?.summary.period_metrics.Total.return_split.gross_pct ?? 0),
-        units_delta: item.units - (previous?.units ?? 0),
+        start_value: item.start_value,
+        end_value: item.end_value,
+        value_delta: item.end_value - item.start_value,
+        start_cost: item.start_cost,
+        end_cost: item.end_cost,
+        cost_delta: item.end_cost - item.start_cost,
+        profit: item.summary.profit_loss_net,
+        return_pct: item.summary.period_metrics.Total.return_split.gross_pct,
       };
     });
-  }, [report, previousReport]);
-
-  const fundComparisonByTicker = useMemo(
-    () => new Map(fundComparisonRows.map((item) => [item.ticker, item])),
-    [fundComparisonRows],
-  );
+  }, [report]);
 
   const handleExportExcel = () => {
     if (!report) {
@@ -189,7 +159,7 @@ export default function ReportsPage() {
         period_value: report.period_value,
         period_start: report.period_start,
         period_end: report.period_end,
-        as_of_date: report.as_of_date,
+        as_of_date: report.portfolio_end.as_of_date,
         data_start_date: report.data_start_date,
         data_end_date: report.data_end_date,
         generated_at: new Date().toISOString(),
@@ -203,18 +173,25 @@ export default function ReportsPage() {
 
     const portfolioRows = [
       {
-        total_cost: report.portfolio.totals.total_cost,
-        current_value: report.portfolio.totals.current_value,
-        profit_loss_net: report.portfolio.totals.profit_loss_net,
-        total_borrowed: report.portfolio.totals.total_borrowed,
-        total_equity: report.portfolio.totals.total_equity,
-        total_interest_paid: report.portfolio.totals.total_interest_paid,
-        weighted_average_days_invested:
-          report.portfolio.totals.weighted_average_days_invested,
-        weighted_annualized_return_on_cost_pct:
-          report.portfolio.totals.weighted_annualized_return_on_cost_pct,
-        total_return_gross_pct:
-          report.portfolio.period_metrics.Total.return_split.gross_pct,
+        period_start_value: report.portfolio_start.totals.current_value,
+        period_end_value: report.portfolio_end.totals.current_value,
+        value_delta:
+          report.portfolio_end.totals.current_value -
+          report.portfolio_start.totals.current_value,
+        start_cost: report.portfolio_start.totals.total_cost,
+        end_cost: report.portfolio_end.totals.total_cost,
+        cost_delta:
+          report.portfolio_end.totals.total_cost -
+          report.portfolio_start.totals.total_cost,
+        start_profit: report.portfolio_start.totals.profit_loss_net,
+        end_profit: report.portfolio_end.totals.profit_loss_net,
+        profit_delta:
+          report.portfolio_end.totals.profit_loss_net -
+          report.portfolio_start.totals.profit_loss_net,
+        start_return_pct:
+          report.portfolio_start.period_metrics.Total.return_split.gross_pct,
+        end_return_pct:
+          report.portfolio_end.period_metrics.Total.return_split.gross_pct,
       },
     ];
     XLSX.utils.book_append_sheet(
@@ -226,15 +203,21 @@ export default function ReportsPage() {
     const fundRows = report.funds.map((item) => ({
       ticker: item.ticker,
       fund_name: item.fund_name,
-      units: item.units,
-      latest_price_date: item.latest_price_date,
-      current_value: item.summary.current_value,
-      total_cost: item.summary.capital_split.total_cost,
+      start_units: item.start_units,
+      end_units: item.end_units,
+      units_delta: item.end_units - item.start_units,
+      start_price: item.start_price,
+      end_price: item.end_price,
+      start_value: item.start_value,
+      end_value: item.end_value,
+      value_delta: item.end_value - item.start_value,
+      start_cost: item.start_cost,
+      end_cost: item.end_cost,
+      cost_delta: item.end_cost - item.start_cost,
       profit_loss_net: item.summary.profit_loss_net,
       total_return_gross_pct:
         item.summary.period_metrics.Total.return_split.gross_pct,
-      weighted_annualized_return_on_cost_pct:
-        item.summary.returns.annualized_return_on_cost_weighted_pct,
+      latest_price_date: item.latest_price_date,
     }));
     XLSX.utils.book_append_sheet(
       workbook,
@@ -242,13 +225,16 @@ export default function ReportsPage() {
       "Funds",
     );
 
-    if (comparison) {
+    if (previousReport) {
       const comparisonRows = [
         {
-          previous_period: comparison.previousPeriodLabel,
-          current_value_delta: comparison.currentValueDelta,
-          profit_loss_delta: comparison.profitLossDelta,
-          gross_pct_delta: comparison.grossPctDelta,
+          previous_period: previousReport.period_value,
+          current_value_delta:
+            report.portfolio_end.totals.current_value -
+            previousReport.portfolio_end.totals.current_value,
+          profit_loss_delta:
+            report.portfolio_end.totals.profit_loss_net -
+            previousReport.portfolio_end.totals.profit_loss_net,
         },
       ];
       XLSX.utils.book_append_sheet(
@@ -262,7 +248,7 @@ export default function ReportsPage() {
       XLSX.utils.book_append_sheet(
         workbook,
         XLSX.utils.json_to_sheet(fundComparisonRows),
-        "FundComparison",
+        "PeriodDelta",
       );
     }
 
@@ -280,9 +266,11 @@ export default function ReportsPage() {
           <tr>
             <td>${item.ticker}</td>
             <td>${item.fund_name}</td>
-            <td style="text-align:right;">${item.units.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
-            <td style="text-align:right;">${nok(item.summary.current_value)}</td>
-            <td style="text-align:right;">${nok(item.summary.capital_split.total_cost)}</td>
+            <td style="text-align:right;">${item.start_units.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+            <td style="text-align:right;">${item.end_units.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+            <td style="text-align:right;">${nok(item.start_value)}</td>
+            <td style="text-align:right;">${nok(item.end_value)}</td>
+            <td style="text-align:right;">${nok(item.end_cost)}</td>
             <td style="text-align:right;">${nok(item.summary.profit_loss_net)}</td>
             <td style="text-align:right;">${pct(item.summary.period_metrics.Total.return_split.gross_pct)}</td>
             <td>${item.latest_price_date ?? "-"}</td>
@@ -291,12 +279,17 @@ export default function ReportsPage() {
       )
       .join("");
 
-    const comparisonHtml = comparison
+    const comparisonHtml = previousReport
       ? `
-          <h2>Sammenligning mot forrige periode (${comparison.previousPeriodLabel})</h2>
-          <p>Endring markedsverdi: ${nok(comparison.currentValueDelta)}</p>
-          <p>Endring netto avkastning: ${nok(comparison.profitLossDelta)}</p>
-          <p>Endring total avkastning: ${pct(comparison.grossPctDelta)}</p>
+          <h2>Sammenligning mot forrige periode (${previousReport.period_value})</h2>
+          <p>Endring markedsverdi: ${nok(
+            report.portfolio_end.totals.current_value -
+              previousReport.portfolio_end.totals.current_value,
+          )}</p>
+          <p>Endring netto avkastning: ${nok(
+            report.portfolio_end.totals.profit_loss_net -
+              previousReport.portfolio_end.totals.profit_loss_net,
+          )}</p>
         `
       : "";
 
@@ -306,27 +299,32 @@ export default function ReportsPage() {
           <tr>
             <td>${item.ticker}</td>
             <td>${item.fund_name}</td>
-            <td style="text-align:right;">${nok(item.current_value_delta)}</td>
-            <td style="text-align:right;">${nok(item.profit_loss_net_delta)}</td>
-            <td style="text-align:right;">${pct(item.total_return_pct_delta)}</td>
-            <td style="text-align:right;">${item.units_delta.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+            <td style="text-align:right;">${nok(item.start_value)}</td>
+            <td style="text-align:right;">${nok(item.end_value)}</td>
+            <td style="text-align:right;">${nok(item.value_delta)}</td>
+            <td style="text-align:right;">${nok(item.end_cost)}</td>
+            <td style="text-align:right;">${nok(item.profit)}</td>
+            <td style="text-align:right;">${pct(item.return_pct)}</td>
           </tr>
         `,
       )
       .join("");
 
-    const fundComparisonHtml = comparison
-      ? `
-          <h2>Per fond sammenligning</h2>
+    const fundComparisonHtml =
+      fundComparisonRows.length > 0
+        ? `
+          <h2>Per fond periode endring</h2>
           <table>
             <thead>
               <tr>
                 <th>Ticker</th>
                 <th>Fond</th>
-                <th>Endring markedsverdi</th>
-                <th>Endring netto avkastning</th>
-                <th>Endring total %</th>
-                <th>Endring andeler</th>
+                <th>Start verdi</th>
+                <th>Slutt verdi</th>
+                <th>Endring verdi</th>
+                <th>Kostpris</th>
+                <th>Netto avkastning</th>
+                <th>Avkastning %</th>
               </tr>
             </thead>
             <tbody>
@@ -334,7 +332,7 @@ export default function ReportsPage() {
             </tbody>
           </table>
         `
-      : "";
+        : "";
 
     const printWindow = window.open("", "_blank", "width=1200,height=900");
     if (!printWindow) {
@@ -359,13 +357,18 @@ export default function ReportsPage() {
           <h1>FundTracker Rapport</h1>
           <p>Periode: ${report.period_type} ${report.period_value}</p>
           <p>Fra ${report.period_start} til ${report.period_end}</p>
-          <p>As of: ${report.as_of_date}</p>
+          <p>As of: ${report.portfolio_end.as_of_date}</p>
 
           <h2>Portefolje</h2>
-          <p>Markedsverdi: ${nok(report.portfolio.totals.current_value)}</p>
-          <p>Kostpris: ${nok(report.portfolio.totals.total_cost)}</p>
-          <p>Netto avkastning: ${nok(report.portfolio.totals.profit_loss_net)}</p>
-          <p>Total avkastning %: ${pct(report.portfolio.period_metrics.Total.return_split.gross_pct)}</p>
+          <p>Markedsverdi START: ${nok(report.portfolio_start.totals.current_value)}</p>
+          <p>Markedsverdi SLUTT: ${nok(report.portfolio_end.totals.current_value)}</p>
+          <p>Endring markedsverdi: ${nok(
+            report.portfolio_end.totals.current_value -
+              report.portfolio_start.totals.current_value,
+          )}</p>
+          <p>Kostpris: ${nok(report.portfolio_end.totals.total_cost)}</p>
+          <p>Netto avkastning: ${nok(report.portfolio_end.totals.profit_loss_net)}</p>
+          <p>Total avkastning %: ${pct(report.portfolio_end.period_metrics.Total.return_split.gross_pct)}</p>
 
           ${comparisonHtml}
 
@@ -375,8 +378,10 @@ export default function ReportsPage() {
               <tr>
                 <th>Ticker</th>
                 <th>Fond</th>
-                <th>Andeler</th>
-                <th>Markedsverdi</th>
+                <th>Andeler START</th>
+                <th>Andeler SLUTT</th>
+                <th>Verdi START</th>
+                <th>Verdi SLUTT</th>
                 <th>Kostpris</th>
                 <th>Netto avkastning</th>
                 <th>Total %</th>
@@ -491,52 +496,61 @@ export default function ReportsPage() {
           <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
             <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-xs uppercase tracking-wide text-gray-500">
-                Markedsverdi
+                Markedsverdi START
               </p>
               <p className="mt-1 text-lg font-semibold text-gray-800">
-                {nok(report.portfolio.totals.current_value)}
+                {nok(report.portfolio_start.totals.current_value)}
               </p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-xs uppercase tracking-wide text-gray-500">
-                Kostpris
+                Markedsverdi SLUTT
               </p>
               <p className="mt-1 text-lg font-semibold text-gray-800">
-                {nok(report.portfolio.totals.total_cost)}
+                {nok(report.portfolio_end.totals.current_value)}
               </p>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
               <p className="text-xs uppercase tracking-wide text-gray-500">
-                Netto avkastning
+                Endring markedsverdi
               </p>
               <p className="mt-1 text-lg font-semibold text-gray-800">
-                {nok(report.portfolio.totals.profit_loss_net)}
-              </p>
-            </div>
-            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-              <p className="text-xs uppercase tracking-wide text-gray-500">
-                Total avkastning %
-              </p>
-              <p className="mt-1 text-lg font-semibold text-gray-800">
-                {pct(
-                  report.portfolio.period_metrics.Total.return_split.gross_pct,
+                {nok(
+                  report.portfolio_end.totals.current_value -
+                    report.portfolio_start.totals.current_value,
                 )}
+              </p>
+            </div>
+            <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+              <p className="text-xs uppercase tracking-wide text-gray-500">
+                Kostpris (slutt)
+              </p>
+              <p className="mt-1 text-lg font-semibold text-gray-800">
+                {nok(report.portfolio_end.totals.total_cost)}
               </p>
             </div>
           </div>
 
-          {comparison && (
+          {previousReport && (
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
               <p className="font-semibold">
-                Sammenlignet med forrige periode (
-                {comparison.previousPeriodLabel})
+                Sammenlignet med forrige periode ({previousReport.period_value})
               </p>
-              <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
-                <p>Endring markedsverdi: {nok(comparison.currentValueDelta)}</p>
+              <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">
                 <p>
-                  Endring netto avkastning: {nok(comparison.profitLossDelta)}
+                  Endring markedsverdi samlet:{" "}
+                  {nok(
+                    report.portfolio_end.totals.current_value -
+                      previousReport.portfolio_end.totals.current_value,
+                  )}
                 </p>
-                <p>Endring total avkastning: {pct(comparison.grossPctDelta)}</p>
+                <p>
+                  Endring netto avkastning samlet:{" "}
+                  {nok(
+                    report.portfolio_end.totals.profit_loss_net -
+                      previousReport.portfolio_end.totals.profit_loss_net,
+                  )}
+                </p>
               </div>
             </div>
           )}
@@ -591,33 +605,18 @@ export default function ReportsPage() {
                   <tr className="border-b bg-gray-50">
                     <th className="px-3 py-2 text-left">Ticker</th>
                     <th className="px-3 py-2 text-left">Fond</th>
-                    <th className="px-3 py-2 text-right">Andeler</th>
-                    {comparison && (
-                      <th className="px-3 py-2 text-right">Endring andeler</th>
-                    )}
-                    <th className="px-3 py-2 text-right">Markedsverdi</th>
-                    {comparison && (
-                      <th className="px-3 py-2 text-right">
-                        Endring markedsverdi
-                      </th>
-                    )}
+                    <th className="px-3 py-2 text-right">Andeler START</th>
+                    <th className="px-3 py-2 text-right">Andeler SLUTT</th>
+                    <th className="px-3 py-2 text-right">Verdi START</th>
+                    <th className="px-3 py-2 text-right">Verdi SLUTT</th>
                     <th className="px-3 py-2 text-right">Kostpris</th>
                     <th className="px-3 py-2 text-right">Netto avkastning</th>
-                    {comparison && (
-                      <th className="px-3 py-2 text-right">
-                        Endring netto avkastning
-                      </th>
-                    )}
                     <th className="px-3 py-2 text-right">Total %</th>
-                    {comparison && (
-                      <th className="px-3 py-2 text-right">Endring total %</th>
-                    )}
                     <th className="px-3 py-2 text-left">Siste kursdato</th>
                   </tr>
                 </thead>
                 <tbody>
                   {filteredFunds.map((item) => {
-                    const fundDelta = fundComparisonByTicker.get(item.ticker);
                     return (
                       <tr key={item.fund_id} className="border-b">
                         <td className="px-3 py-2 font-medium text-gray-800">
@@ -627,51 +626,35 @@ export default function ReportsPage() {
                           {item.fund_name}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700">
-                          {item.units.toLocaleString("nb-NO", {
+                          {item.start_units.toLocaleString("nb-NO", {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 4,
                           })}
                         </td>
-                        {comparison && (
-                          <td className="px-3 py-2 text-right text-gray-700">
-                            {fundDelta
-                              ? fundDelta.units_delta.toLocaleString("nb-NO", {
-                                  minimumFractionDigits: 2,
-                                  maximumFractionDigits: 4,
-                                })
-                              : "-"}
-                          </td>
-                        )}
                         <td className="px-3 py-2 text-right text-gray-700">
-                          {nok(item.summary.current_value)}
+                          {item.end_units.toLocaleString("nb-NO", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 4,
+                          })}
                         </td>
-                        {comparison && (
-                          <td className="px-3 py-2 text-right text-gray-700">
-                            {fundDelta ? nok(fundDelta.current_value_delta) : "-"}
-                          </td>
-                        )}
                         <td className="px-3 py-2 text-right text-gray-700">
-                          {nok(item.summary.capital_split.total_cost)}
+                          {nok(item.start_value)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {nok(item.end_value)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {nok(item.end_cost)}
                         </td>
                         <td className="px-3 py-2 text-right text-gray-700">
                           {nok(item.summary.profit_loss_net)}
                         </td>
-                        {comparison && (
-                          <td className="px-3 py-2 text-right text-gray-700">
-                            {fundDelta ? nok(fundDelta.profit_loss_net_delta) : "-"}
-                          </td>
-                        )}
                         <td className="px-3 py-2 text-right text-gray-700">
                           {pct(
                             item.summary.period_metrics.Total.return_split
                               .gross_pct,
                           )}
                         </td>
-                        {comparison && (
-                          <td className="px-3 py-2 text-right text-gray-700">
-                            {fundDelta ? pct(fundDelta.total_return_pct_delta) : "-"}
-                          </td>
-                        )}
                         <td className="px-3 py-2 text-gray-700">
                           {item.latest_price_date ?? "-"}
                         </td>

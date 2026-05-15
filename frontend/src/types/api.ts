@@ -320,8 +320,19 @@ export interface FundPeriodReportSummary {
   fund_id: string;
   fund_name: string;
   ticker: string;
-  units: number;
+  // Period-start snapshot
+  start_units: number;
+  start_price: number | null;
+  start_cost: number;
+  start_value: number;
+  // Period-end snapshot
+  end_units: number;
+  end_price: number | null;
+  end_cost: number;
+  end_value: number;
+  // Latest price info for end-of-period
   latest_price_date: string | null;
+  // Full fund summary at period end
   summary: FundSummary;
 }
 
@@ -330,10 +341,10 @@ export interface PortfolioPeriodReport {
   period_value: string;
   period_start: string;
   period_end: string;
-  as_of_date: string;
   data_start_date: string;
   data_end_date: string;
-  portfolio: PortfolioPeriodReportSummary;
+  portfolio_start: PortfolioPeriodReportSummary;
+  portfolio_end: PortfolioPeriodReportSummary;
   funds: FundPeriodReportSummary[];
 }
 

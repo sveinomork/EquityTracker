@@ -511,8 +511,9 @@ Typisk sekvens for ny portefølje:
    - `GET /api/v1/portfolio/summary`
    - `GET /api/v1/portfolio/history`
 6. Hent rapportgrunnlag:
-  - `GET /api/v1/reports/period-options?period_type=monthly`
-  - `GET /api/v1/reports/period?period_type=monthly&period_value=2026-01`
+
+- `GET /api/v1/reports/period-options?period_type=monthly`
+- `GET /api/v1/reports/period?period_type=monthly&period_value=2026-01`
 
 ## cURL-snutter
 

@@ -105,14 +105,15 @@ def test_period_report_includes_each_fund_and_units(client) -> None:
     assert payload["period_value"] == "2024-03"
     assert payload["period_start"] == "2024-03-01"
     assert payload["period_end"] == "2024-03-31"
-    assert payload["as_of_date"] == "2024-03-29"
 
-    assert payload["portfolio"]["totals"]["current_value"] == pytest.approx(8610.0, abs=0.01)
+    # Check portfolio start and end snapshots
+    assert payload["portfolio_start"]["totals"]["current_value"] >= 0
+    assert payload["portfolio_end"]["totals"]["current_value"] == pytest.approx(8610.0, abs=0.01)
 
     assert len(payload["funds"]) == 1
     fund_row = payload["funds"][0]
     assert fund_row["ticker"] == "RPT"
-    assert fund_row["units"] == pytest.approx(82.0, abs=1e-6)
+    assert fund_row["end_units"] == pytest.approx(82.0, abs=1e-6)
     assert fund_row["latest_price_date"] == "2024-03-29"
 
 

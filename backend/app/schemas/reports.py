@@ -33,23 +33,34 @@ class PortfolioPeriodReportSummary(APIModel):
 
 
 class FundPeriodReportSummary(APIModel):
-    """Fund-level report row including units and latest price date as of the report date."""
+    """Fund-level report row with start/end period values."""
     fund_id: uuid.UUID
     fund_name: str
     ticker: str
-    units: Decimal
+    # Period-start snapshot
+    start_units: Decimal
+    start_price: Decimal | None
+    start_cost: Decimal  # total_cost at period start
+    start_value: Decimal  # current_value at period start
+    # Period-end snapshot
+    end_units: Decimal
+    end_price: Decimal | None
+    end_cost: Decimal  # total_cost at period end
+    end_value: Decimal  # current_value at period end
+    # Latest price info for end-of-period
     latest_price_date: date | None
+    # Full fund summary at period end
     summary: FundSummary
 
 
 class PortfolioPeriodReport(APIModel):
-    """Combined report payload for portfolio totals and each individual fund."""
+    """Period report with start and end-of-period portfolio snapshots."""
     period_type: ReportPeriodType
     period_value: str
     period_start: date
     period_end: date
-    as_of_date: date
     data_start_date: date
     data_end_date: date
-    portfolio: PortfolioPeriodReportSummary
+    portfolio_start: PortfolioPeriodReportSummary  # Portfolio state at period start
+    portfolio_end: PortfolioPeriodReportSummary    # Portfolio state at period end
     funds: list[FundPeriodReportSummary]

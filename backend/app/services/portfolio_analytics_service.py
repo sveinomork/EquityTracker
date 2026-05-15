@@ -615,7 +615,7 @@ class PortfolioAnalyticsService:
         period_type: ReportPeriodType,
         period_value: str,
     ) -> PortfolioPeriodReport:
-        """Build a report payload for one calendar month, quarter, or year."""
+        """Build a report payload with START and END-of-period snapshots for a calendar period."""
         data_range = self._portfolio_data_range()
         if data_range is None:
             raise ValidationError("No portfolio data available for report generation")
@@ -631,30 +631,64 @@ class PortfolioAnalyticsService:
         if period_start > data_end:
             raise ValidationError("Requested period is after available portfolio data")
 
-        effective_as_of = min(period_end, data_end)
-        portfolio_summary = self.get_portfolio_summary(as_of_date=effective_as_of)
+        # Fetch snapshots at period start and end
+        # If period_start is before data_start, use data_start instead
+        start_snapshot_date = max(period_start, data_start)
+        end_snapshot_date = min(period_end, data_end)
 
+        portfolio_start = self.get_portfolio_summary(as_of_date=start_snapshot_date)
+        portfolio_end = self.get_portfolio_summary(as_of_date=end_snapshot_date)
+
+        # Build fund rows with start/end period values
         fund_rows: list[FundPeriodReportSummary] = []
-        for fund_summary in portfolio_summary.funds:
-            fund_transactions = self.transaction_repository.list_for_fund(fund_summary.fund_id)
-            units = self._fund_units_as_of(fund_transactions, effective_as_of)
-            latest_price = self.price_repository.latest_on_or_before(
-                fund_summary.fund_id,
-                effective_as_of,
+        
+        # Create lookup of funds by ID for easy matching between start and end snapshots
+        start_funds_by_id = {f.fund_id: f for f in portfolio_start.funds}
+        
+        for end_fund_summary in portfolio_end.funds:
+            fund_id = end_fund_summary.fund_id
+            start_fund_summary = start_funds_by_id.get(fund_id)
+            
+            fund_transactions = self.transaction_repository.list_for_fund(fund_id)
+            
+            # Calculate units, cost, and prices at period start
+            start_units = self._fund_units_as_of(fund_transactions, start_snapshot_date)
+            start_cost = start_fund_summary.capital_split.total_cost if start_fund_summary else Decimal(0)
+            start_price = self.price_repository.latest_on_or_before(
+                fund_id,
+                start_snapshot_date,
             )
+            start_value = start_fund_summary.current_value if start_fund_summary else Decimal(0)
+            
+            # Calculate units, cost, and prices at period end
+            end_units = self._fund_units_as_of(fund_transactions, end_snapshot_date)
+            end_cost = end_fund_summary.capital_split.total_cost
+            end_price = self.price_repository.latest_on_or_before(
+                fund_id,
+                end_snapshot_date,
+            )
+            end_value = end_fund_summary.current_value
+            
             fund_rows.append(
                 FundPeriodReportSummary(
-                    fund_id=fund_summary.fund_id,
-                    fund_name=fund_summary.fund_name,
-                    ticker=fund_summary.ticker,
-                    units=units,
-                    latest_price_date=latest_price.date if latest_price is not None else None,
-                    summary=fund_summary,
+                    fund_id=fund_id,
+                    fund_name=end_fund_summary.fund_name,
+                    ticker=end_fund_summary.ticker,
+                    start_units=start_units,
+                    start_price=start_price.price if start_price is not None else None,
+                    start_cost=start_cost,
+                    start_value=start_value,
+                    end_units=end_units,
+                    end_price=end_price.price if end_price is not None else None,
+                    end_cost=end_cost,
+                    end_value=end_value,
+                    latest_price_date=end_price.date if end_price is not None else None,
+                    summary=end_fund_summary,
                 )
             )
 
         fund_rows.sort(
-            key=lambda item: item.summary.current_value,
+            key=lambda item: item.end_value,
             reverse=True,
         )
 
@@ -663,13 +697,17 @@ class PortfolioAnalyticsService:
             period_value=normalized_value,
             period_start=period_start,
             period_end=period_end,
-            as_of_date=effective_as_of,
             data_start_date=data_start,
             data_end_date=data_end,
-            portfolio=PortfolioPeriodReportSummary(
-                as_of_date=portfolio_summary.as_of_date,
-                totals=portfolio_summary.totals,
-                period_metrics=portfolio_summary.period_metrics,
+            portfolio_start=PortfolioPeriodReportSummary(
+                as_of_date=portfolio_start.as_of_date,
+                totals=portfolio_start.totals,
+                period_metrics=portfolio_start.period_metrics,
+            ),
+            portfolio_end=PortfolioPeriodReportSummary(
+                as_of_date=portfolio_end.as_of_date,
+                totals=portfolio_end.totals,
+                period_metrics=portfolio_end.period_metrics,
             ),
             funds=fund_rows,
         )
