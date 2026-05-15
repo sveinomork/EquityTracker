@@ -105,14 +105,20 @@ export default function ReportsPage() {
         leftValue = left.summary.profit_loss_net;
         rightValue = right.summary.profit_loss_net;
       } else if (sortBy === "gross_pct") {
-        leftValue = left.summary.period_metrics.Total.return_split.gross_pct ?? Number.NEGATIVE_INFINITY;
-        rightValue = right.summary.period_metrics.Total.return_split.gross_pct ?? Number.NEGATIVE_INFINITY;
+        leftValue =
+          left.summary.period_metrics.Total.return_split.gross_pct ??
+          Number.NEGATIVE_INFINITY;
+        rightValue =
+          right.summary.period_metrics.Total.return_split.gross_pct ??
+          Number.NEGATIVE_INFINITY;
       } else {
         leftValue = left.units;
         rightValue = right.units;
       }
 
-      return sortDirection === "asc" ? leftValue - rightValue : rightValue - leftValue;
+      return sortDirection === "asc"
+        ? leftValue - rightValue
+        : rightValue - leftValue;
     });
 
     return sorted;
@@ -125,14 +131,43 @@ export default function ReportsPage() {
 
     return {
       currentValueDelta:
-        report.portfolio.totals.current_value - previousReport.portfolio.totals.current_value,
+        report.portfolio.totals.current_value -
+        previousReport.portfolio.totals.current_value,
       profitLossDelta:
-        report.portfolio.totals.profit_loss_net - previousReport.portfolio.totals.profit_loss_net,
+        report.portfolio.totals.profit_loss_net -
+        previousReport.portfolio.totals.profit_loss_net,
       grossPctDelta:
         (report.portfolio.period_metrics.Total.return_split.gross_pct ?? 0) -
-        (previousReport.portfolio.period_metrics.Total.return_split.gross_pct ?? 0),
+        (previousReport.portfolio.period_metrics.Total.return_split.gross_pct ??
+          0),
       previousPeriodLabel: previousReport.period_value,
     };
+  }, [report, previousReport]);
+
+  const fundComparisonRows = useMemo(() => {
+    if (!report || !previousReport) {
+      return [];
+    }
+
+    const previousByTicker = new Map(
+      previousReport.funds.map((item) => [item.ticker, item]),
+    );
+
+    return report.funds.map((item) => {
+      const previous = previousByTicker.get(item.ticker);
+      return {
+        ticker: item.ticker,
+        fund_name: item.fund_name,
+        current_value_delta:
+          item.summary.current_value - (previous?.summary.current_value ?? 0),
+        profit_loss_net_delta:
+          item.summary.profit_loss_net - (previous?.summary.profit_loss_net ?? 0),
+        total_return_pct_delta:
+          (item.summary.period_metrics.Total.return_split.gross_pct ?? 0) -
+          (previous?.summary.period_metrics.Total.return_split.gross_pct ?? 0),
+        units_delta: item.units - (previous?.units ?? 0),
+      };
+    });
   }, [report, previousReport]);
 
   const handleExportExcel = () => {
@@ -201,6 +236,30 @@ export default function ReportsPage() {
       "Funds",
     );
 
+    if (comparison) {
+      const comparisonRows = [
+        {
+          previous_period: comparison.previousPeriodLabel,
+          current_value_delta: comparison.currentValueDelta,
+          profit_loss_delta: comparison.profitLossDelta,
+          gross_pct_delta: comparison.grossPctDelta,
+        },
+      ];
+      XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(comparisonRows),
+        "Comparison",
+      );
+    }
+
+    if (fundComparisonRows.length > 0) {
+      XLSX.utils.book_append_sheet(
+        workbook,
+        XLSX.utils.json_to_sheet(fundComparisonRows),
+        "FundComparison",
+      );
+    }
+
     XLSX.writeFile(workbook, buildReportFilename(report, "xlsx"));
   };
 
@@ -225,6 +284,51 @@ export default function ReportsPage() {
         `,
       )
       .join("");
+
+    const comparisonHtml = comparison
+      ? `
+          <h2>Sammenligning mot forrige periode (${comparison.previousPeriodLabel})</h2>
+          <p>Endring markedsverdi: ${nok(comparison.currentValueDelta)}</p>
+          <p>Endring netto avkastning: ${nok(comparison.profitLossDelta)}</p>
+          <p>Endring total avkastning: ${pct(comparison.grossPctDelta)}</p>
+        `
+      : "";
+
+    const fundComparisonRowsHtml = fundComparisonRows
+      .map(
+        (item) => `
+          <tr>
+            <td>${item.ticker}</td>
+            <td>${item.fund_name}</td>
+            <td style="text-align:right;">${nok(item.current_value_delta)}</td>
+            <td style="text-align:right;">${nok(item.profit_loss_net_delta)}</td>
+            <td style="text-align:right;">${pct(item.total_return_pct_delta)}</td>
+            <td style="text-align:right;">${item.units_delta.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</td>
+          </tr>
+        `,
+      )
+      .join("");
+
+    const fundComparisonHtml = comparison
+      ? `
+          <h2>Per fond sammenligning</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Fond</th>
+                <th>Endring markedsverdi</th>
+                <th>Endring netto avkastning</th>
+                <th>Endring total %</th>
+                <th>Endring andeler</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${fundComparisonRowsHtml}
+            </tbody>
+          </table>
+        `
+      : "";
 
     const printWindow = window.open("", "_blank", "width=1200,height=900");
     if (!printWindow) {
@@ -257,6 +361,8 @@ export default function ReportsPage() {
           <p>Netto avkastning: ${nok(report.portfolio.totals.profit_loss_net)}</p>
           <p>Total avkastning %: ${pct(report.portfolio.period_metrics.Total.return_split.gross_pct)}</p>
 
+          ${comparisonHtml}
+
           <h2>Per fond</h2>
           <table>
             <thead>
@@ -275,6 +381,8 @@ export default function ReportsPage() {
               ${rowsHtml}
             </tbody>
           </table>
+
+          ${fundComparisonHtml}
         </body>
       </html>
     `);
@@ -414,11 +522,14 @@ export default function ReportsPage() {
           {comparison && (
             <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
               <p className="font-semibold">
-                Sammenlignet med forrige periode ({comparison.previousPeriodLabel})
+                Sammenlignet med forrige periode (
+                {comparison.previousPeriodLabel})
               </p>
               <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
                 <p>Endring markedsverdi: {nok(comparison.currentValueDelta)}</p>
-                <p>Endring netto avkastning: {nok(comparison.profitLossDelta)}</p>
+                <p>
+                  Endring netto avkastning: {nok(comparison.profitLossDelta)}
+                </p>
                 <p>Endring total avkastning: {pct(comparison.grossPctDelta)}</p>
               </div>
             </div>
@@ -448,7 +559,9 @@ export default function ReportsPage() {
                 className="rounded-md border border-gray-300 px-2 py-2 text-sm"
               >
                 <option value="current_value">Sorter: Markedsverdi</option>
-                <option value="profit_loss_net">Sorter: Netto avkastning</option>
+                <option value="profit_loss_net">
+                  Sorter: Netto avkastning
+                </option>
                 <option value="gross_pct">Sorter: Total %</option>
                 <option value="units">Sorter: Andeler</option>
               </select>
