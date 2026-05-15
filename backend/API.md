@@ -405,6 +405,53 @@ Eksempel:
 ]
 ```
 
+### 4.8 Reports
+
+#### GET `/api/v1/reports/period-options`
+
+Henter tilgjengelige perioder for rapportgenerering innenfor historisk datagrunnlag.
+
+Query params:
+
+- `period_type` required: `monthly` | `quarterly` | `yearly`
+- `as_of_date` optional (`YYYY-MM-DD`)
+
+Respons: `ReportPeriodOptions`
+
+Inneholder:
+
+- `period_type`
+- `data_start_date`, `data_end_date`
+- `options[]` med:
+  - `value` (f.eks. `2024-03`, `2024-Q1`, `2024`)
+  - `label`
+  - `start_date`, `end_date`
+
+#### GET `/api/v1/reports/period`
+
+Henter rapport for valgt periode med både portefølje og alle fond.
+
+Query params:
+
+- `period_type` required: `monthly` | `quarterly` | `yearly`
+- `period_value` required:
+  - måned: `YYYY-MM`
+  - kvartal: `YYYY-QN`
+  - år: `YYYY`
+
+Respons: `PortfolioPeriodReport`
+
+Inneholder:
+
+- periodefelter: `period_type`, `period_value`, `period_start`, `period_end`, `as_of_date`
+- dataintervall: `data_start_date`, `data_end_date`
+- `portfolio` (`PortfolioPeriodReportSummary`)
+- `funds[]` (`FundPeriodReportSummary`) med:
+  - `fund_id`, `fund_name`, `ticker`
+  - `units` (antall andeler per fond)
+  - `latest_price_date`
+  - `summary` (`FundSummary`)
+
 ## 5. Analyseobjekter (summary/historikk)
 
 Denne seksjonen beskriver de viktigste strukturerte response-objektene.
@@ -463,6 +510,9 @@ Typisk sekvens for ny portefølje:
    - `GET /api/v1/funds/{fund_id}/lots`
    - `GET /api/v1/portfolio/summary`
    - `GET /api/v1/portfolio/history`
+6. Hent rapportgrunnlag:
+  - `GET /api/v1/reports/period-options?period_type=monthly`
+  - `GET /api/v1/reports/period?period_type=monthly&period_value=2026-01`
 
 ## cURL-snutter
 
@@ -488,4 +538,16 @@ Porteføljehistorikk:
 
 ```bash
 curl "http://localhost:8000/api/v1/portfolio/history"
+```
+
+Rapportalternativer (måned):
+
+```bash
+curl "http://localhost:8000/api/v1/reports/period-options?period_type=monthly"
+```
+
+Rapport for valgt måned:
+
+```bash
+curl "http://localhost:8000/api/v1/reports/period?period_type=monthly&period_value=2026-01"
 ```
