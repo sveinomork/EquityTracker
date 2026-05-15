@@ -13,13 +13,21 @@ const PERIOD_TYPES: { value: ReportPeriodType; label: string }[] = [
   { value: "yearly", label: "Aar" },
 ];
 
-function buildReportFilename(report: PortfolioPeriodReport, extension: string): string {
+function buildReportFilename(
+  report: PortfolioPeriodReport,
+  extension: string,
+): string {
   return `fundtracker-report-${report.period_type}-${report.period_value}.${extension}`;
 }
 
 export default function ReportsPage() {
   const [periodType, setPeriodType] = useState<ReportPeriodType>("monthly");
   const [periodValue, setPeriodValue] = useState<string>("");
+  const [fundFilter, setFundFilter] = useState("");
+  const [sortBy, setSortBy] = useState<
+    "current_value" | "profit_loss_net" | "gross_pct" | "units"
+  >("current_value");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
 
   const {
     data: optionsData,
@@ -54,6 +62,78 @@ export default function ReportsPage() {
     isLoading: reportLoading,
     isError: reportError,
   } = usePeriodReport(periodType, periodValue);
+
+  const previousPeriodValue = useMemo(() => {
+    const currentIndex = availableOptions.findIndex(
+      (item) => item.value === periodValue,
+    );
+    if (currentIndex <= 0) {
+      return undefined;
+    }
+    return availableOptions[currentIndex - 1].value;
+  }, [availableOptions, periodValue]);
+
+  const { data: previousReport } = usePeriodReport(
+    periodType,
+    previousPeriodValue,
+  );
+
+  const filteredFunds = useMemo(() => {
+    if (!report) {
+      return [];
+    }
+
+    const normalizedFilter = fundFilter.trim().toLowerCase();
+    const visibleFunds = report.funds.filter((item) => {
+      if (!normalizedFilter) {
+        return true;
+      }
+      return (
+        item.ticker.toLowerCase().includes(normalizedFilter) ||
+        item.fund_name.toLowerCase().includes(normalizedFilter)
+      );
+    });
+
+    const sorted = [...visibleFunds].sort((left, right) => {
+      let leftValue = 0;
+      let rightValue = 0;
+
+      if (sortBy === "current_value") {
+        leftValue = left.summary.current_value;
+        rightValue = right.summary.current_value;
+      } else if (sortBy === "profit_loss_net") {
+        leftValue = left.summary.profit_loss_net;
+        rightValue = right.summary.profit_loss_net;
+      } else if (sortBy === "gross_pct") {
+        leftValue = left.summary.period_metrics.Total.return_split.gross_pct ?? Number.NEGATIVE_INFINITY;
+        rightValue = right.summary.period_metrics.Total.return_split.gross_pct ?? Number.NEGATIVE_INFINITY;
+      } else {
+        leftValue = left.units;
+        rightValue = right.units;
+      }
+
+      return sortDirection === "asc" ? leftValue - rightValue : rightValue - leftValue;
+    });
+
+    return sorted;
+  }, [fundFilter, report, sortBy, sortDirection]);
+
+  const comparison = useMemo(() => {
+    if (!report || !previousReport) {
+      return null;
+    }
+
+    return {
+      currentValueDelta:
+        report.portfolio.totals.current_value - previousReport.portfolio.totals.current_value,
+      profitLossDelta:
+        report.portfolio.totals.profit_loss_net - previousReport.portfolio.totals.profit_loss_net,
+      grossPctDelta:
+        (report.portfolio.period_metrics.Total.return_split.gross_pct ?? 0) -
+        (previousReport.portfolio.period_metrics.Total.return_split.gross_pct ?? 0),
+      previousPeriodLabel: previousReport.period_value,
+    };
+  }, [report, previousReport]);
 
   const handleExportExcel = () => {
     if (!report) {
@@ -110,7 +190,8 @@ export default function ReportsPage() {
       current_value: item.summary.current_value,
       total_cost: item.summary.capital_split.total_cost,
       profit_loss_net: item.summary.profit_loss_net,
-      total_return_gross_pct: item.summary.period_metrics.Total.return_split.gross_pct,
+      total_return_gross_pct:
+        item.summary.period_metrics.Total.return_split.gross_pct,
       weighted_annualized_return_on_cost_pct:
         item.summary.returns.annualized_return_on_cost_weighted_pct,
     }));
@@ -330,8 +411,61 @@ export default function ReportsPage() {
             </div>
           </div>
 
+          {comparison && (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+              <p className="font-semibold">
+                Sammenlignet med forrige periode ({comparison.previousPeriodLabel})
+              </p>
+              <div className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-3">
+                <p>Endring markedsverdi: {nok(comparison.currentValueDelta)}</p>
+                <p>Endring netto avkastning: {nok(comparison.profitLossDelta)}</p>
+                <p>Endring total avkastning: {pct(comparison.grossPctDelta)}</p>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
             <SectionHeader title="Per fond" />
+            <div className="mb-3 grid grid-cols-1 gap-2 md:grid-cols-4">
+              <input
+                type="text"
+                value={fundFilter}
+                onChange={(event) => setFundFilter(event.target.value)}
+                placeholder="Sok ticker eller fond"
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+              />
+              <select
+                value={sortBy}
+                onChange={(event) =>
+                  setSortBy(
+                    event.target.value as
+                      | "current_value"
+                      | "profit_loss_net"
+                      | "gross_pct"
+                      | "units",
+                  )
+                }
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+              >
+                <option value="current_value">Sorter: Markedsverdi</option>
+                <option value="profit_loss_net">Sorter: Netto avkastning</option>
+                <option value="gross_pct">Sorter: Total %</option>
+                <option value="units">Sorter: Andeler</option>
+              </select>
+              <select
+                value={sortDirection}
+                onChange={(event) =>
+                  setSortDirection(event.target.value as "asc" | "desc")
+                }
+                className="rounded-md border border-gray-300 px-2 py-2 text-sm"
+              >
+                <option value="desc">Rekkefolge: Hoyest forst</option>
+                <option value="asc">Rekkefolge: Lavest forst</option>
+              </select>
+              <div className="text-sm text-gray-500 flex items-center">
+                Viser {filteredFunds.length} av {report.funds.length} fond
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -347,7 +481,7 @@ export default function ReportsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {report.funds.map((item) => (
+                  {filteredFunds.map((item) => (
                     <tr key={item.fund_id} className="border-b">
                       <td className="px-3 py-2 font-medium text-gray-800">
                         {item.ticker}
