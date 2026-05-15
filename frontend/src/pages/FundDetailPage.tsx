@@ -137,9 +137,9 @@ export default function FundDetailPage() {
       <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
         <SectionHeader title="Rullerende perioder" />
         <p className="text-xs text-gray-500 mb-3">
-          For 1d-2y justeres verdiendring for kjøp/salg og utbytte-reinvestering
-          i perioden. Total viser markedsverdi minus kostpris (kjøp). Visning er
-          uten skatt.
+          For 1d, 7d, 14d og 90d justeres verdiendring for kjøp, salg og
+          utbytte-reinvestering i perioden. Total viser gjenværende markedsverdi
+          pluss salgsproveny minus samlet kostpris. Visning er uten skatt.
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -156,7 +156,7 @@ export default function FundDetailPage() {
                 />
                 <ThWithTooltip
                   label="Brutto verdiendring"
-                  tip="For 1d-2y: (verdi slutt - verdi start) justert for netto kjøp/salg og utbytte-reinvestering. For Total: markedsverdi minus kostpris (kjøp)."
+                  tip="For 1d, 7d, 14d og 90d: (verdi slutt - verdi start) justert for netto kjøp/salg og utbytte-reinvestering. For Total: gjenværende markedsverdi pluss salgsproveny minus kostpris."
                 />
                 <ThWithTooltip
                   label="Rentekost"

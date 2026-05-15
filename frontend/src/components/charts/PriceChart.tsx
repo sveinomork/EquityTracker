@@ -15,13 +15,11 @@ import ErrorMessage from "../common/ErrorMessage";
 import EmptyState from "../common/EmptyState";
 
 const PERIODS: { label: string; value: PricePeriod }[] = [
+  { label: "1d", value: "1d" },
   { label: "7d", value: "7d" },
   { label: "14d", value: "14d" },
-  { label: "30d", value: "30d" },
   { label: "90d", value: "90d" },
-  { label: "180d", value: "180d" },
-  { label: "1 år", value: "1y" },
-  { label: "Alt", value: "all" },
+  { label: "Total", value: "total" },
 ];
 
 interface Props {
@@ -30,7 +28,7 @@ interface Props {
 }
 
 export default function PriceChart({ fundId, fundName }: Props) {
-  const [period, setPeriod] = useState<PricePeriod>("30d");
+  const [period, setPeriod] = useState<PricePeriod>("90d");
   const { data: prices, isLoading, isError } = useFundPrices(fundId, period);
 
   const chartData = (prices ?? []).map((p) => ({

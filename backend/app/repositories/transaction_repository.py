@@ -1,6 +1,7 @@
 import uuid
+from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.domain.enums import TransactionType
@@ -49,3 +50,15 @@ class TransactionRepository:
             .order_by(Transaction.date.asc(), Transaction.created_at.asc())
         )
         return list(self.session.scalars(statement))
+
+    def get_date_range(self, fund_id: uuid.UUID | None = None) -> tuple[date, date] | None:
+        """Return earliest and latest transaction dates, optionally for a specific fund."""
+        statement = select(func.min(Transaction.date), func.max(Transaction.date))
+        if fund_id is not None:
+            statement = statement.where(Transaction.fund_id == fund_id)
+
+        min_date, max_date = self.session.execute(statement).one()
+        if min_date is None or max_date is None:
+            return None
+
+        return min_date, max_date

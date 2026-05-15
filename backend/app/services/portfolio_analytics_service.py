@@ -1,11 +1,13 @@
+import calendar
 import math
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from app.domain.enums import TransactionType
-from app.domain.exceptions import NotFoundError
+from app.domain.exceptions import NotFoundError, ValidationError
 from app.models.fund import Fund
 from app.models.transaction import Transaction
 from app.repositories.fund_repository import FundRepository
@@ -31,6 +33,14 @@ from app.schemas.analytics import (
     ReturnMetrics,
     TaxSummary,
     TrueNetWorthBreakdown,
+)
+from app.schemas.reports import (
+    FundPeriodReportSummary,
+    PortfolioPeriodReport,
+    PortfolioPeriodReportSummary,
+    ReportPeriodOption,
+    ReportPeriodOptions,
+    ReportPeriodType,
 )
 from app.services.interest_service import InterestService
 
@@ -579,6 +589,220 @@ class PortfolioAnalyticsService:
             as_of_date=effective_date,
             rows=rows,
         )
+
+    def get_report_period_options(
+        self,
+        period_type: ReportPeriodType,
+        as_of_date: date | None = None,
+    ) -> ReportPeriodOptions:
+        """Return all selectable period values within available historical data."""
+        data_range = self._portfolio_data_range()
+        if data_range is None:
+            raise ValidationError("No portfolio data available for report generation")
+
+        data_start, data_end = data_range
+        effective_end = min(as_of_date or date.today(), data_end)
+        options = self._build_period_options(period_type, data_start, effective_end)
+        return ReportPeriodOptions(
+            period_type=period_type,
+            data_start_date=data_start,
+            data_end_date=data_end,
+            options=options,
+        )
+
+    def get_period_report(
+        self,
+        period_type: ReportPeriodType,
+        period_value: str,
+    ) -> PortfolioPeriodReport:
+        """Build a report payload for one calendar month, quarter, or year."""
+        data_range = self._portfolio_data_range()
+        if data_range is None:
+            raise ValidationError("No portfolio data available for report generation")
+
+        data_start, data_end = data_range
+        period_start, period_end, normalized_value = self._resolve_report_period_bounds(
+            period_type,
+            period_value,
+        )
+
+        if period_end < data_start:
+            raise ValidationError("Requested period is before available portfolio data")
+        if period_start > data_end:
+            raise ValidationError("Requested period is after available portfolio data")
+
+        effective_as_of = min(period_end, data_end)
+        portfolio_summary = self.get_portfolio_summary(as_of_date=effective_as_of)
+
+        fund_rows: list[FundPeriodReportSummary] = []
+        for fund_summary in portfolio_summary.funds:
+            fund_transactions = self.transaction_repository.list_for_fund(fund_summary.fund_id)
+            units = self._fund_units_as_of(fund_transactions, effective_as_of)
+            latest_price = self.price_repository.latest_on_or_before(
+                fund_summary.fund_id,
+                effective_as_of,
+            )
+            fund_rows.append(
+                FundPeriodReportSummary(
+                    fund_id=fund_summary.fund_id,
+                    fund_name=fund_summary.fund_name,
+                    ticker=fund_summary.ticker,
+                    units=units,
+                    latest_price_date=latest_price.date if latest_price is not None else None,
+                    summary=fund_summary,
+                )
+            )
+
+        fund_rows.sort(
+            key=lambda item: item.summary.current_value,
+            reverse=True,
+        )
+
+        return PortfolioPeriodReport(
+            period_type=period_type,
+            period_value=normalized_value,
+            period_start=period_start,
+            period_end=period_end,
+            as_of_date=effective_as_of,
+            data_start_date=data_start,
+            data_end_date=data_end,
+            portfolio=PortfolioPeriodReportSummary(
+                as_of_date=portfolio_summary.as_of_date,
+                totals=portfolio_summary.totals,
+                period_metrics=portfolio_summary.period_metrics,
+            ),
+            funds=fund_rows,
+        )
+
+    def _portfolio_data_range(self) -> tuple[date, date] | None:
+        """Return the overall data range across transactions and prices."""
+        transaction_range = self.transaction_repository.get_date_range()
+        price_range = self.price_repository.get_date_range()
+        if transaction_range is None and price_range is None:
+            return None
+
+        starts = [item[0] for item in (transaction_range, price_range) if item is not None]
+        ends = [item[1] for item in (transaction_range, price_range) if item is not None]
+        return min(starts), max(ends)
+
+    def _resolve_report_period_bounds(
+        self,
+        period_type: ReportPeriodType,
+        period_value: str,
+    ) -> tuple[date, date, str]:
+        """Parse one report period value and return normalized bounds."""
+        if period_type == "monthly":
+            match = re.fullmatch(r"(\d{4})-(\d{2})", period_value)
+            if match is None:
+                raise ValidationError("Monthly period must use format YYYY-MM")
+            year = int(match.group(1))
+            month = int(match.group(2))
+            if month < 1 or month > 12:
+                raise ValidationError("Monthly period month must be between 01 and 12")
+            start_date = date(year, month, 1)
+            end_date = date(year, month, calendar.monthrange(year, month)[1])
+            return start_date, end_date, f"{year:04d}-{month:02d}"
+
+        if period_type == "quarterly":
+            match = re.fullmatch(r"(\d{4})-Q([1-4])", period_value)
+            if match is None:
+                raise ValidationError("Quarterly period must use format YYYY-QN")
+            year = int(match.group(1))
+            quarter = int(match.group(2))
+            start_month = ((quarter - 1) * 3) + 1
+            end_month = start_month + 2
+            start_date = date(year, start_month, 1)
+            end_date = date(year, end_month, calendar.monthrange(year, end_month)[1])
+            return start_date, end_date, f"{year:04d}-Q{quarter}"
+
+        if period_type == "yearly":
+            match = re.fullmatch(r"(\d{4})", period_value)
+            if match is None:
+                raise ValidationError("Yearly period must use format YYYY")
+            year = int(match.group(1))
+            start_date = date(year, 1, 1)
+            end_date = date(year, 12, 31)
+            return start_date, end_date, f"{year:04d}"
+
+        raise ValidationError("Unsupported report period type")
+
+    def _build_period_options(
+        self,
+        period_type: ReportPeriodType,
+        data_start: date,
+        data_end: date,
+    ) -> list[ReportPeriodOption]:
+        """Build selectable period values between start and end dates."""
+        if data_start > data_end:
+            return []
+
+        options: list[ReportPeriodOption] = []
+        if period_type == "monthly":
+            cursor = date(data_start.year, data_start.month, 1)
+            while cursor <= data_end:
+                month_end = date(
+                    cursor.year,
+                    cursor.month,
+                    calendar.monthrange(cursor.year, cursor.month)[1],
+                )
+                option_end = min(month_end, data_end)
+                options.append(
+                    ReportPeriodOption(
+                        value=f"{cursor.year:04d}-{cursor.month:02d}",
+                        label=f"{cursor.year:04d}-{cursor.month:02d}",
+                        start_date=cursor,
+                        end_date=option_end,
+                    )
+                )
+                if cursor.month == 12:
+                    cursor = date(cursor.year + 1, 1, 1)
+                else:
+                    cursor = date(cursor.year, cursor.month + 1, 1)
+            return options
+
+        if period_type == "quarterly":
+            quarter_start_month = ((data_start.month - 1) // 3) * 3 + 1
+            cursor = date(data_start.year, quarter_start_month, 1)
+            while cursor <= data_end:
+                quarter = ((cursor.month - 1) // 3) + 1
+                end_month = cursor.month + 2
+                quarter_end = date(
+                    cursor.year,
+                    end_month,
+                    calendar.monthrange(cursor.year, end_month)[1],
+                )
+                option_end = min(quarter_end, data_end)
+                options.append(
+                    ReportPeriodOption(
+                        value=f"{cursor.year:04d}-Q{quarter}",
+                        label=f"{cursor.year:04d} Q{quarter}",
+                        start_date=cursor,
+                        end_date=option_end,
+                    )
+                )
+                if cursor.month >= 10:
+                    cursor = date(cursor.year + 1, 1, 1)
+                else:
+                    cursor = date(cursor.year, cursor.month + 3, 1)
+            return options
+
+        if period_type == "yearly":
+            cursor_year = data_start.year
+            while cursor_year <= data_end.year:
+                start_date = date(cursor_year, 1, 1)
+                end_date = date(cursor_year, 12, 31)
+                options.append(
+                    ReportPeriodOption(
+                        value=f"{cursor_year:04d}",
+                        label=f"{cursor_year:04d}",
+                        start_date=start_date,
+                        end_date=min(end_date, data_end),
+                    )
+                )
+                cursor_year += 1
+            return options
+
+        return options
 
     def _compute_lots(
         self,

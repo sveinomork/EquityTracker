@@ -1,7 +1,7 @@
 import uuid
 from datetime import date
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models.daily_fund_price import DailyFundPrice
@@ -91,3 +91,15 @@ class PriceRepository:
             return None
 
         return latest
+
+    def get_date_range(self, fund_id: uuid.UUID | None = None) -> tuple[date, date] | None:
+        """Return earliest and latest price dates, optionally for a specific fund."""
+        statement = select(func.min(DailyFundPrice.date), func.max(DailyFundPrice.date))
+        if fund_id is not None:
+            statement = statement.where(DailyFundPrice.fund_id == fund_id)
+
+        min_date, max_date = self.session.execute(statement).one()
+        if min_date is None or max_date is None:
+            return None
+
+        return min_date, max_date

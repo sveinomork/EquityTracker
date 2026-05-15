@@ -11,14 +11,12 @@ function periodToParams(period: PricePeriod): {
   limit?: number;
 } {
   const today = new Date();
-  if (period === "all") return { limit: 1500 };
-  const days: Record<Exclude<PricePeriod, "all">, number> = {
+  if (period === "total") return { limit: 1500 };
+  const days: Record<Exclude<PricePeriod, "total">, number> = {
+    "1d": 1,
     "7d": 7,
     "14d": 14,
-    "30d": 30,
     "90d": 90,
-    "180d": 180,
-    "1y": 365,
   };
   return { from_date: format(subDays(today, days[period])) };
 }

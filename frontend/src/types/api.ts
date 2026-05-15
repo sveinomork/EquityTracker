@@ -292,6 +292,51 @@ export interface SyncResult {
   error: string | null;
 }
 
+// ─── Reports ──────────────────────────────────────────────────────────────────
+
+export type ReportPeriodType = "monthly" | "quarterly" | "yearly";
+
+export interface ReportPeriodOption {
+  value: string;
+  label: string;
+  start_date: string;
+  end_date: string;
+}
+
+export interface ReportPeriodOptions {
+  period_type: ReportPeriodType;
+  data_start_date: string;
+  data_end_date: string;
+  options: ReportPeriodOption[];
+}
+
+export interface PortfolioPeriodReportSummary {
+  as_of_date: string;
+  totals: PortfolioTotals;
+  period_metrics: PeriodMetricsByWindow;
+}
+
+export interface FundPeriodReportSummary {
+  fund_id: string;
+  fund_name: string;
+  ticker: string;
+  units: number;
+  latest_price_date: string | null;
+  summary: FundSummary;
+}
+
+export interface PortfolioPeriodReport {
+  period_type: ReportPeriodType;
+  period_value: string;
+  period_start: string;
+  period_end: string;
+  as_of_date: string;
+  data_start_date: string;
+  data_end_date: string;
+  portfolio: PortfolioPeriodReportSummary;
+  funds: FundPeriodReportSummary[];
+}
+
 // ─── Price period selector ────────────────────────────────────────────────────
 
-export type PricePeriod = "7d" | "14d" | "30d" | "90d" | "180d" | "1y" | "all";
+export type PricePeriod = "1d" | "7d" | "14d" | "90d" | "total";

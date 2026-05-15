@@ -2,6 +2,9 @@ import client from "./client";
 import type {
   FundLotsSummary,
   FundPeriodReconciliation,
+  PortfolioPeriodReport,
+  ReportPeriodOptions,
+  ReportPeriodType,
   FundSummary,
   PortfolioHistoryPoint,
   PortfolioSummary,
@@ -47,6 +50,32 @@ export const fetchFundPeriodReconciliation = (
       params: {
         ticker,
         ...(asOfDate ? { as_of_date: asOfDate } : {}),
+      },
+    })
+    .then((r) => r.data);
+
+export const fetchReportPeriodOptions = (
+  periodType: ReportPeriodType,
+  asOfDate?: string,
+): Promise<ReportPeriodOptions> =>
+  client
+    .get<ReportPeriodOptions>("/reports/period-options", {
+      params: {
+        period_type: periodType,
+        ...(asOfDate ? { as_of_date: asOfDate } : {}),
+      },
+    })
+    .then((r) => r.data);
+
+export const fetchPeriodReport = (
+  periodType: ReportPeriodType,
+  periodValue: string,
+): Promise<PortfolioPeriodReport> =>
+  client
+    .get<PortfolioPeriodReport>("/reports/period", {
+      params: {
+        period_type: periodType,
+        period_value: periodValue,
       },
     })
     .then((r) => r.data);
