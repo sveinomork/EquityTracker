@@ -161,7 +161,8 @@ export default function ReportsPage() {
         current_value_delta:
           item.summary.current_value - (previous?.summary.current_value ?? 0),
         profit_loss_net_delta:
-          item.summary.profit_loss_net - (previous?.summary.profit_loss_net ?? 0),
+          item.summary.profit_loss_net -
+          (previous?.summary.profit_loss_net ?? 0),
         total_return_pct_delta:
           (item.summary.period_metrics.Total.return_split.gross_pct ?? 0) -
           (previous?.summary.period_metrics.Total.return_split.gross_pct ?? 0),
@@ -169,6 +170,11 @@ export default function ReportsPage() {
       };
     });
   }, [report, previousReport]);
+
+  const fundComparisonByTicker = useMemo(
+    () => new Map(fundComparisonRows.map((item) => [item.ticker, item])),
+    [fundComparisonRows],
+  );
 
   const handleExportExcel = () => {
     if (!report) {
@@ -586,48 +592,92 @@ export default function ReportsPage() {
                     <th className="px-3 py-2 text-left">Ticker</th>
                     <th className="px-3 py-2 text-left">Fond</th>
                     <th className="px-3 py-2 text-right">Andeler</th>
+                    {comparison && (
+                      <th className="px-3 py-2 text-right">Endring andeler</th>
+                    )}
                     <th className="px-3 py-2 text-right">Markedsverdi</th>
+                    {comparison && (
+                      <th className="px-3 py-2 text-right">
+                        Endring markedsverdi
+                      </th>
+                    )}
                     <th className="px-3 py-2 text-right">Kostpris</th>
                     <th className="px-3 py-2 text-right">Netto avkastning</th>
+                    {comparison && (
+                      <th className="px-3 py-2 text-right">
+                        Endring netto avkastning
+                      </th>
+                    )}
                     <th className="px-3 py-2 text-right">Total %</th>
+                    {comparison && (
+                      <th className="px-3 py-2 text-right">Endring total %</th>
+                    )}
                     <th className="px-3 py-2 text-left">Siste kursdato</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredFunds.map((item) => (
-                    <tr key={item.fund_id} className="border-b">
-                      <td className="px-3 py-2 font-medium text-gray-800">
-                        {item.ticker}
-                      </td>
-                      <td className="px-3 py-2 text-gray-700">
-                        {item.fund_name}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {item.units.toLocaleString("nb-NO", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 4,
-                        })}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {nok(item.summary.current_value)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {nok(item.summary.capital_split.total_cost)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {nok(item.summary.profit_loss_net)}
-                      </td>
-                      <td className="px-3 py-2 text-right text-gray-700">
-                        {pct(
-                          item.summary.period_metrics.Total.return_split
-                            .gross_pct,
+                  {filteredFunds.map((item) => {
+                    const fundDelta = fundComparisonByTicker.get(item.ticker);
+                    return (
+                      <tr key={item.fund_id} className="border-b">
+                        <td className="px-3 py-2 font-medium text-gray-800">
+                          {item.ticker}
+                        </td>
+                        <td className="px-3 py-2 text-gray-700">
+                          {item.fund_name}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {item.units.toLocaleString("nb-NO", {
+                            minimumFractionDigits: 2,
+                            maximumFractionDigits: 4,
+                          })}
+                        </td>
+                        {comparison && (
+                          <td className="px-3 py-2 text-right text-gray-700">
+                            {fundDelta
+                              ? fundDelta.units_delta.toLocaleString("nb-NO", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 4,
+                                })
+                              : "-"}
+                          </td>
                         )}
-                      </td>
-                      <td className="px-3 py-2 text-gray-700">
-                        {item.latest_price_date ?? "-"}
-                      </td>
-                    </tr>
-                  ))}
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {nok(item.summary.current_value)}
+                        </td>
+                        {comparison && (
+                          <td className="px-3 py-2 text-right text-gray-700">
+                            {fundDelta ? nok(fundDelta.current_value_delta) : "-"}
+                          </td>
+                        )}
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {nok(item.summary.capital_split.total_cost)}
+                        </td>
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {nok(item.summary.profit_loss_net)}
+                        </td>
+                        {comparison && (
+                          <td className="px-3 py-2 text-right text-gray-700">
+                            {fundDelta ? nok(fundDelta.profit_loss_net_delta) : "-"}
+                          </td>
+                        )}
+                        <td className="px-3 py-2 text-right text-gray-700">
+                          {pct(
+                            item.summary.period_metrics.Total.return_split
+                              .gross_pct,
+                          )}
+                        </td>
+                        {comparison && (
+                          <td className="px-3 py-2 text-right text-gray-700">
+                            {fundDelta ? pct(fundDelta.total_return_pct_delta) : "-"}
+                          </td>
+                        )}
+                        <td className="px-3 py-2 text-gray-700">
+                          {item.latest_price_date ?? "-"}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
