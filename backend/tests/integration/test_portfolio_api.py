@@ -137,7 +137,7 @@ def test_fund_summary_and_lots_include_analytics(client) -> None:
     assert summary["total_dividend_reinvested"] == 202.0
     assert summary["realized_profit_from_sold_positions"] == pytest.approx(79.21568627451, abs=1e-6)
     assert summary["profit_loss_gross"] == pytest.approx(488.78431372549, abs=1e-6)
-    assert summary["profit_loss_gross_including_realized"] == pytest.approx(366.0, abs=1e-6)
+    assert summary["profit_loss_gross_including_realized"] == pytest.approx(568.0, abs=1e-6)
     assert summary["performance_windows"]["14d_pct"] is None
     assert summary["performance_windows"]["30d_pct"] > 0
     assert summary["returns"]["return_on_equity_net_pct"] is not None

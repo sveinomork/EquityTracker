@@ -53,17 +53,17 @@ export default function FundDetailPage() {
   const periodOrder: Array<keyof typeof summary.period_metrics> = [
     "1d",
     "7d",
-    "30d",
-    "180d",
-    "YTD",
-    "12m",
-    "24m",
+    "14d",
+    "90d",
     "Total",
   ];
   const periodLabel: Record<keyof typeof summary.period_metrics, string> = {
     "1d": "1d",
     "7d": "7d",
+    "14d": "14d",
     "30d": "30d",
+    "60d": "60d",
+    "90d": "90d",
     "180d": "180d",
     YTD: "YTD",
     "12m": "1y",
@@ -83,6 +83,9 @@ export default function FundDetailPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-800">{summary.ticker}</h1>
           <p className="text-sm text-gray-500">{summary.fund_name}</p>
+          <p className="text-xs text-gray-400 mt-1">
+            Siste kursdato: {lotsData?.market_price_date ?? "-"}
+          </p>
         </div>
       </div>
 
@@ -145,7 +148,7 @@ export default function FundDetailPage() {
                 <ThWithTooltip
                   className="px-3 py-2 text-left"
                   label="Periode"
-                  tip="Tidsvindu for beregning (1d, 7d, 30d, 180d, YTD, 1y, 2y, Total)."
+                  tip="Tidsvindu for beregning (1d, 7d, 14d, 90d, Total)."
                 />
                 <ThWithTooltip
                   label="Brutto %"

@@ -162,7 +162,7 @@ Inneholder blant annet:
 - `profit_loss_gross`, `profit_loss_gross_including_realized`, `profit_loss_net`
 - `returns`
 - `performance_windows`
-- `period_metrics` (`1d`, `7d`, `30d`, `180d`, `YTD`, `12m`, `24m`, `Total`)
+- `period_metrics` (`1d`, `7d`, `14d`, `30d`, `60d`, `90d`, `180d`, `YTD`, `12m`, `24m`, `Total`)
 - `tax_summary`
 - `true_net_worth`
 
@@ -429,7 +429,7 @@ Brukes både på fonds- og porteføljenivå.
 
 JSON-nøkler i respons:
 
-- `1d`, `7d`, `30d`, `180d`, `YTD`, `12m`, `24m`, `Total`
+- `1d`, `7d`, `14d`, `30d`, `60d`, `90d`, `180d`, `YTD`, `12m`, `24m`, `Total`
 
 Hver periode inneholder:
 
@@ -445,6 +445,8 @@ Summerer hele porteføljen:
 - `total_interest_paid`
 - `total_equity`, `total_borrowed`
 - `profit_loss_net`
+- `weighted_average_days_invested`
+- `weighted_annualized_return_on_cost_pct`
 - `total_return`
 - `true_net_worth_nok`, `true_net_worth`
 

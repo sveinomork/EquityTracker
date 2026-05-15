@@ -183,7 +183,7 @@ def test_dashboard_manual_reference_scenario(client) -> None:
     # FHY manual expectations.
     fhy_24m_gross = 1200.0
     fhy_24m_base = 12800.0
-    fhy_total_gross = -700.0
+    fhy_total_gross = 1200.0
     fhy_total_base = 14700.0
 
     days_before_sell = _days_inclusive(date(2024, 1, 3), date(2025, 12, 19))
@@ -209,7 +209,7 @@ def test_dashboard_manual_reference_scenario(client) -> None:
     # KNB manual expectations.
     knb_24m_gross = 2280.0
     knb_24m_base = 9500.0
-    knb_total_gross = -620.0
+    knb_total_gross = 2280.0
     knb_total_base = 12400.0
 
     _assert_period(

@@ -59,7 +59,10 @@ class PeriodMetricsByWindow(APIModel):
     """Period metrics grouped by predefined time windows."""
     d1: PeriodMetrics = Field(serialization_alias="1d")
     d7: PeriodMetrics = Field(serialization_alias="7d")
+    d14: PeriodMetrics = Field(serialization_alias="14d")
     d30: PeriodMetrics = Field(serialization_alias="30d")
+    d60: PeriodMetrics = Field(serialization_alias="60d")
+    d90: PeriodMetrics = Field(serialization_alias="90d")
     d180: PeriodMetrics = Field(serialization_alias="180d")
     ytd: PeriodMetrics = Field(serialization_alias="YTD")
     m12: PeriodMetrics = Field(serialization_alias="12m")
@@ -199,6 +202,8 @@ class PortfolioTotals(APIModel):
     total_equity: Decimal
     total_borrowed: Decimal
     profit_loss_net: Decimal
+    weighted_average_days_invested: Decimal
+    weighted_annualized_return_on_cost_pct: Decimal | None = None
     total_return: ReturnSplitMetrics
     true_net_worth_nok: Decimal
     true_net_worth: TrueNetWorthBreakdown

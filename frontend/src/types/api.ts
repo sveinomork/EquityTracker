@@ -122,7 +122,10 @@ export interface PeriodMetrics {
 export interface PeriodMetricsByWindow {
   "1d": PeriodMetrics;
   "7d": PeriodMetrics;
+  "14d": PeriodMetrics;
   "30d": PeriodMetrics;
+  "60d": PeriodMetrics;
+  "90d": PeriodMetrics;
   "180d": PeriodMetrics;
   YTD: PeriodMetrics;
   "12m": PeriodMetrics;
@@ -258,6 +261,8 @@ export interface PortfolioTotals {
   total_equity: number;
   total_borrowed: number;
   profit_loss_net: number;
+  weighted_average_days_invested: number;
+  weighted_annualized_return_on_cost_pct: number | null;
   total_return: ReturnSplitMetrics;
   true_net_worth_nok: number;
   true_net_worth: TrueNetWorthBreakdown;

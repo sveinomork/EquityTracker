@@ -6,11 +6,11 @@ interface Props {
 }
 
 const WINDOW_LABELS: { key: keyof PeriodMetricsByWindow; label: string }[] = [
-  { key: "30d", label: "30 dager" },
-  { key: "180d", label: "180 dager" },
-  { key: "YTD", label: "YTD" },
-  { key: "12m", label: "1 år" },
-  { key: "24m", label: "2 år" },
+  { key: "1d", label: "1 dag" },
+  { key: "7d", label: "7 dager" },
+  { key: "14d", label: "14 dager" },
+  { key: "90d", label: "90 dager" },
+  { key: "Total", label: "Total" },
 ];
 
 export default function PerformanceBars({ periodMetrics }: Props) {

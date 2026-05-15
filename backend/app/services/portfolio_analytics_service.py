@@ -40,7 +40,19 @@ DECIMAL_365 = Decimal("365")
 DECIMAL_22_PCT = Decimal("0.22")
 DECIMAL_78_PCT = Decimal("0.78")
 WINDOWS = ((14, "d14_pct"), (30, "d30_pct"), (90, "d90_pct"), (180, "d180_pct"), (365, "y1_pct"))
-PERIOD_KEYS = ("d1", "d7", "d30", "d180", "ytd", "m12", "m24", "total")
+PERIOD_KEYS = (
+    "d1",
+    "d7",
+    "d14",
+    "d30",
+    "d60",
+    "d90",
+    "d180",
+    "ytd",
+    "m12",
+    "m24",
+    "total",
+)
 MAX_PRICE_STALENESS_DAYS = 7
 DISTRIBUTING_FUNDS = {"FHY", "HHR", "HHRP"}
 
@@ -352,6 +364,40 @@ class PortfolioAnalyticsService:
             (item.capital_split.total_cost for item in fund_summaries), start=DECIMAL_ZERO
         )
         total_market_value = sum((item.current_value for item in fund_summaries), start=DECIMAL_ZERO)
+        weighted_days_numerator = sum(
+            (
+                item.average_days_owned * item.capital_split.total_cost
+                for item in fund_summaries
+            ),
+            start=DECIMAL_ZERO,
+        )
+        weighted_average_days_invested = (
+            weighted_days_numerator / total_cost if total_cost > DECIMAL_ZERO else DECIMAL_ZERO
+        )
+
+        weighted_annualized_entries = [
+            item
+            for item in fund_summaries
+            if item.capital_split.total_cost > DECIMAL_ZERO
+            and item.returns.annualized_return_on_cost_weighted_pct is not None
+        ]
+        weighted_annualized_denominator = sum(
+            (item.capital_split.total_cost for item in weighted_annualized_entries),
+            start=DECIMAL_ZERO,
+        )
+        weighted_annualized_return_on_cost_pct = (
+            sum(
+                (
+                    item.returns.annualized_return_on_cost_weighted_pct
+                    * item.capital_split.total_cost
+                    for item in weighted_annualized_entries
+                ),
+                start=DECIMAL_ZERO,
+            )
+            / weighted_annualized_denominator
+            if weighted_annualized_denominator > DECIMAL_ZERO
+            else None
+        )
 
         totals = PortfolioTotals(
             total_cost=total_cost,
@@ -372,6 +418,8 @@ class PortfolioAnalyticsService:
             profit_loss_net=sum(
                 (item.profit_loss_net for item in fund_summaries), start=DECIMAL_ZERO
             ),
+            weighted_average_days_invested=weighted_average_days_invested,
+            weighted_annualized_return_on_cost_pct=weighted_annualized_return_on_cost_pct,
             total_return=portfolio_period_metrics.total.return_split,
             true_net_worth_nok=sum(
                 (item.true_net_worth.true_net_worth_nok for item in fund_summaries),
@@ -706,7 +754,10 @@ class PortfolioAnalyticsService:
         return PeriodMetricsByWindow(
             d1=metrics_map["d1"],
             d7=metrics_map["d7"],
+            d14=metrics_map["d14"],
             d30=metrics_map["d30"],
+            d60=metrics_map["d60"],
+            d90=metrics_map["d90"],
             d180=metrics_map["d180"],
             ytd=metrics_map["ytd"],
             m12=metrics_map["m12"],
@@ -1047,8 +1098,14 @@ class PortfolioAnalyticsService:
             return as_of_date - timedelta(days=1)
         if period_key == "d7":
             return as_of_date - timedelta(days=7)
+        if period_key == "d14":
+            return as_of_date - timedelta(days=14)
         if period_key == "d30":
             return as_of_date - timedelta(days=30)
+        if period_key == "d60":
+            return as_of_date - timedelta(days=60)
+        if period_key == "d90":
+            return as_of_date - timedelta(days=90)
         if period_key == "d180":
             return as_of_date - timedelta(days=180)
         if period_key == "ytd":

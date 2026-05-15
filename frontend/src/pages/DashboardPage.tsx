@@ -46,31 +46,16 @@ export default function DashboardPage() {
 
   const { funds, totals } = portfolio;
   const portfolioTotal = totals.total_return;
-  const weightedAnnualizedReturn = (() => {
-    const weightedEntries = funds
-      .map((fund) => ({
-        cost: fund.capital_split.total_cost,
-        annualized: fund.returns.annualized_return_on_cost_weighted_pct,
-      }))
-      .filter((entry) => entry.annualized != null && entry.cost > 0);
-
-    const totalCost = weightedEntries.reduce(
-      (sum, entry) => sum + entry.cost,
-      0,
-    );
-    if (totalCost <= 0) return null;
-
-    const weightedSum = weightedEntries.reduce(
-      (sum, entry) => sum + (entry.annualized as number) * entry.cost,
-      0,
-    );
-    return weightedSum / totalCost;
-  })();
+  const weightedAnnualizedReturn =
+    totals.weighted_annualized_return_on_cost_pct;
   const periodOrder: Array<keyof typeof portfolio.period_metrics> = [
     "1d",
     "7d",
+    "14d",
     "30d",
-    "180d",
+    "60d",
+    "90d",
+    "YTD",
     "12m",
     "24m",
     "Total",
@@ -78,7 +63,10 @@ export default function DashboardPage() {
   const periodLabel: Record<keyof typeof portfolio.period_metrics, string> = {
     "1d": "1d",
     "7d": "7d",
+    "14d": "14d",
     "30d": "30d",
+    "60d": "60d",
+    "90d": "90d",
     "180d": "180d",
     YTD: "YTD",
     "12m": "1y",
@@ -97,13 +85,19 @@ export default function DashboardPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
         <StatCard
-          title="Investert"
-          value={nok(totals.total_equity + totals.total_borrowed)}
-          highlight="neutral"
+          title="Totalavkastning med rente (%)"
+          value={pct(portfolioTotal.after_interest_pct)}
+          highlight={
+            portfolioTotal.after_interest_pct == null
+              ? "neutral"
+              : portfolioTotal.after_interest_pct >= 0
+                ? "positive"
+                : "negative"
+          }
         />
         <StatCard
-          title="Markedsverdi"
-          value={nok(totals.current_value)}
+          title="Vektet dager investert"
+          value={`${Math.round(totals.weighted_average_days_invested)} dager`}
           highlight="neutral"
         />
         <StatCard
